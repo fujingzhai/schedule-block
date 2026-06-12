@@ -1,0 +1,29 @@
+{
+  "name": "schedule-block",
+  "version": "0.1.0",
+  "description": "A SiYuan plugin for embedding day and week schedule blocks in documents.",
+  "repository": "https://github.com/fujingzhai/schedule-block",
+  "homepage": "",
+  "author": "游夏",
+  "license": "MIT",
+  "packageManager": "pnpm@10.32.1",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm build:plugin && vite build --config vite.config.widget.ts --watch",
+    "build:plugin": "vite build --config vite.config.plugin.ts",
+    "build:widget": "vite build --config vite.config.widget.ts",
+    "build": "pnpm build:plugin && pnpm build:widget && node scripts/copy-static.mjs && node scripts/package.mjs",
+    "make-install": "pnpm build && node scripts/install.mjs"
+  },
+  "dependencies": {
+    "@fullcalendar/core": "^6.1.19",
+    "@fullcalendar/daygrid": "^6.1.19",
+    "@fullcalendar/interaction": "^6.1.19",
+    "@fullcalendar/timegrid": "^6.1.19",
+    "siyuan": "^1.2.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7"
+  }
+}
