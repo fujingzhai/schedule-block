@@ -17,6 +17,8 @@ It is not a global calendar and it is not a replacement for database calendar vi
 - Drag or resize events to adjust time.
 - Hover an event with notes to show the note in a lightweight tooltip; it disappears when the mouse leaves.
 - Use `Cmd/Ctrl+Z` to undo the previous schedule data operation.
+- Use the Add Schedule command, with `Option+Command+K` by default, to quickly add an event outside a specific schedule block.
+- Export the current day or week schedule block as a PNG screenshot.
 
 ## Interaction Details
 
@@ -55,10 +57,12 @@ After enabling the plugin, insert a schedule block from:
 
 Inside a block, you can:
 
+- use Add Schedule from the top-bar menu, or press `Option+Command+K`, to open the same event editor centered over the SiYuan window with a frosted background overlay,
 - use document titles such as `2026-6-13`, `2026/06/13`, `2026年6月13日`, `20260613`, `2026-W26`, or `2026年第26周` to auto-bind newly inserted blocks,
 - click the anchor button to return to the bound date or week,
 - click the gear button to edit the binding and default event duration,
 - click the filter button to filter events by color,
+- click the screenshot button to export the current schedule block view as a PNG; the export hides transient UI and the current-time indicator, and prefers Desktop as the default save location,
 - click the same settings, filter, plus, or weather button again to close its popover,
 - drag-select a time range to create an event,
 - double-click a blank time slot to create a default-duration event,

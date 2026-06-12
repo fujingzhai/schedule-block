@@ -46,6 +46,11 @@ body {
   background: var(--b3-theme-background);
 }
 
+html.cb-quickadd-mode,
+body.cb-quickadd-mode {
+  background: transparent;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -926,4 +931,31 @@ body {
 
 .cb-anchor-save:hover {
   filter: brightness(1.08);
+}
+
+/* ---------- 快捷记录入口 ---------- */
+.cb-quickadd-backdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+}
+
+body:has(.cb-quickadd-backdrop) .cb-popover {
+  z-index: 10000;
+}
+
+/* ---------- 截图 ---------- */
+body.cb-screenshot-capturing {
+  overflow: visible;
+}
+
+body.cb-screenshot-capturing .cb-btn-screenshot,
+body.cb-screenshot-capturing .cb-filter-picker,
+body.cb-screenshot-capturing .cb-weather-picker,
+body.cb-screenshot-capturing .cb-popover,
+body.cb-screenshot-capturing .cb-anchor-editor,
+body.cb-screenshot-capturing .cb-note-tooltip,
+body.cb-screenshot-capturing .fc-timegrid-now-indicator-line,
+body.cb-screenshot-capturing .fc-timegrid-now-indicator-arrow {
+  visibility: hidden !important;
 }

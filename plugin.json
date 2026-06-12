@@ -2,7 +2,7 @@
   "name": "schedule-block",
   "author": "游夏",
   "url": "https://github.com/fujingzhai/schedule-block",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minAppVersion": "3.6.0",
   "backends": ["windows", "linux", "darwin"],
   "frontends": ["desktop", "desktop-window", "browser-desktop"],
@@ -11,8 +11,8 @@
     "zh_CN": "日程块"
   },
   "description": {
-    "default": "Embed day and week schedule blocks in SiYuan documents.",
-    "zh_CN": "在思源文档中嵌入日历块和周历块，支持拖拽新建、点击编辑日程。"
+    "default": "Embed day and week schedule blocks in SiYuan documents, with quick add and screenshot export.",
+    "zh_CN": "在思源文档中嵌入日历块和周历块，支持拖拽新建、快捷添加和截图导出。"
   },
   "readme": {
     "default": "README.md",

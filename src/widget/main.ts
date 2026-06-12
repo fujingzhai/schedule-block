@@ -1,5 +1,6 @@
 import { Calendar, DateSelectArg, EventApi, EventClickArg, EventDropArg, EventHoveringArg, EventInput } from "@fullcalendar/core";
 import zhCnLocale from "@fullcalendar/core/locales/zh-cn";
+import html2canvas from "html2canvas";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin, { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import { getBlockAttrs, setBlockAttrs, getDocTitle, getRootId } from "./api";
@@ -912,6 +913,108 @@ function editAnchorDate(anchor: HTMLElement): void {
 
 /* ---------- 工具栏 ---------- */
 
+function defaultCreateValues(): PopoverValues {
+  const base = roundedCurrentDate();
+  return {
+    title: "",
+    allDay: false,
+    startDate: fmtDate(base),
+    startTime: fmtTime(base),
+    endDate: fmtDate(base),
+    endTime: fmtTime(addMinutes(base, defaultDurationMinutes)),
+    color: lastColor(),
+    note: ""
+  };
+}
+
+function openCreatePopover(opts: {
+  anchor: { x: number; y: number; rect?: DOMRect };
+  ignoreOutside?: HTMLElement[];
+  docId: string;
+  onDone?(result: { values: PopoverValues; range: { start: string; end: string; allDay: boolean } }): void;
+  onCancelSaved?(): void;
+  onCancel?(): void;
+}): void {
+  const values = defaultCreateValues();
+  let savedId = "";
+  let interacted = false;
+  let latestValues = values;
+  let saveTimer = 0;
+  const persistNew = async (v: PopoverValues, close = false) => {
+    interacted = true;
+    latestValues = v;
+    rememberColor(v.color);
+    const range = valuesToRange(v);
+    if (!savedId) {
+      savedId = newEventId();
+      await store.add({
+        id: savedId,
+        title: v.title,
+        start: range.start,
+        end: range.end,
+        allDay: range.allDay,
+        color: v.color,
+        note: v.note,
+        docId: opts.docId
+      });
+    } else {
+      await store.update(savedId, {
+        title: v.title,
+        start: range.start,
+        end: range.end,
+        allDay: range.allDay,
+        color: v.color,
+        note: v.note
+      });
+    }
+    if (close) {
+      opts.onDone?.({ values: v, range });
+    }
+  };
+
+  openPopover({
+    mode: "create",
+    anchor: opts.anchor,
+    ignoreOutside: opts.ignoreOutside,
+    values,
+    onValuesChange: (v) => {
+      interacted = true;
+      latestValues = v;
+      window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => {
+        persistNew(latestValues).catch(showError);
+      }, 500);
+    },
+    onSave: async (v) => {
+      toolbarCreatePopoverOpen = false;
+      window.clearTimeout(saveTimer);
+      await persistNew(v, true).catch(showError);
+    },
+    onClose: () => {
+      toolbarCreatePopoverOpen = false;
+      window.clearTimeout(saveTimer);
+      if (interacted) {
+        persistNew(latestValues, true).catch(showError);
+      } else {
+        opts.onCancel?.();
+      }
+    },
+    onCancel: () => {
+      toolbarCreatePopoverOpen = false;
+      window.clearTimeout(saveTimer);
+      const afterCancel = () => {
+        opts.onCancelSaved?.();
+        opts.onCancel?.();
+      };
+      if (savedId) {
+        store.remove(savedId).then(afterCancel).catch(showError);
+      } else {
+        opts.onCancel?.();
+      }
+    }
+  });
+}
+
 function buildToolbar(root: HTMLElement, view: ViewKey): void {
   const anchor = anchorLabel(view);
   root.innerHTML = `
@@ -922,6 +1025,9 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
         </button>
         <button type="button" class="cb-icon-btn cb-btn-filter" aria-label="按颜色筛选日程" title="按颜色筛选日程">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h18l-7 8v5.2l-4 2V13L3 5Z"/></svg>
+        </button>
+        <button type="button" class="cb-icon-btn cb-btn-screenshot" aria-label="截取当前日程视图" title="截取当前日程视图">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm8 3a5 5 0 1 0 0 10a5 5 0 0 0 0-10Zm0 2a3 3 0 1 1 0 6a3 3 0 0 1 0-6Z"/></svg>
         </button>
       </div>
       <div class="cb-toolbar-center">
@@ -941,6 +1047,9 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
     <div class="cb-calendar"></div>
   `;
 
+  root.querySelector(".cb-btn-screenshot")!.addEventListener("click", (event) => {
+    captureCurrentView(event.currentTarget as HTMLButtonElement).catch(showError);
+  });
   root.querySelector(".cb-btn-settings")!.addEventListener("click", (event) => {
     editAnchorDate(event.currentTarget as HTMLElement);
   });
@@ -959,86 +1068,18 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
       closePopover();
       return;
     }
-    const base = roundedCurrentDate();
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    const values: PopoverValues = {
-      title: "",
-      allDay: false,
-      startDate: fmtDate(base),
-      startTime: fmtTime(base),
-      endDate: fmtDate(base),
-      endTime: fmtTime(addMinutes(base, defaultDurationMinutes)),
-      color: lastColor(),
-      note: ""
-    };
-    let savedId = "";
-    let interacted = false;
-    let latestValues = values;
-    let saveTimer = 0;
-    const persistNew = async (v: PopoverValues, close = false) => {
-      interacted = true;
-      latestValues = v;
-      rememberColor(v.color);
-      const range = valuesToRange(v);
-      if (!savedId) {
-        savedId = newEventId();
-        await store.add({
-          id: savedId,
-          title: v.title,
-          start: range.start,
-          end: range.end,
-          allDay: range.allDay,
-          color: v.color,
-          note: v.note,
-          docId: docId
-        });
-      } else {
-        await store.update(savedId, {
-          title: v.title,
-          start: range.start,
-          end: range.end,
-          allDay: range.allDay,
-          color: v.color,
-          note: v.note
-        });
-      }
-      if (close) {
-        refresh();
-        calendar.gotoDate(range.start);
-      }
-    };
-    openPopover({
-      mode: "create",
+    openCreatePopover({
       anchor: { x: rect.left, y: rect.bottom + 6, rect },
       ignoreOutside: [target],
-      values,
-      onValuesChange: (v) => {
-        interacted = true;
-        latestValues = v;
-        window.clearTimeout(saveTimer);
-        saveTimer = window.setTimeout(() => {
-          persistNew(latestValues).catch(showError);
-        }, 500);
+      docId: docId,
+      onDone: ({ range }) => {
+        refresh();
+        calendar.gotoDate(range.start);
       },
-      onSave: async (v) => {
-        toolbarCreatePopoverOpen = false;
-        window.clearTimeout(saveTimer);
-        await persistNew(v, true).catch(showError);
-      },
-      onClose: () => {
-        toolbarCreatePopoverOpen = false;
-        window.clearTimeout(saveTimer);
-        if (interacted) {
-          persistNew(latestValues, true).catch(showError);
-        }
-      },
-      onCancel: () => {
-        toolbarCreatePopoverOpen = false;
-        window.clearTimeout(saveTimer);
-        if (savedId) {
-          store.remove(savedId).then(refresh).catch(showError);
-        }
+      onCancelSaved: () => {
+        refresh();
       }
     });
     toolbarCreatePopoverOpen = true;
@@ -1094,6 +1135,12 @@ function isEditableTarget(target: EventTarget | null): boolean {
 async function boot(): Promise<void> {
   initThemeBridge();
 
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("view") === "quickadd") {
+    await bootQuickAdd();
+    return;
+  }
+
   const frame = window.frameElement as HTMLElement | null;
   const blockEl = (frame?.closest("[data-node-id]") as HTMLElement | null) || null;
   blockId = blockEl?.getAttribute("data-node-id") || "";
@@ -1112,7 +1159,6 @@ async function boot(): Promise<void> {
   }
   store.docId = docId;
 
-  const params = new URLSearchParams(window.location.search);
   let view = (params.get("view") as ViewKey) || "week";
   let date = params.get("date") || "";
   if (blockId) {
@@ -1315,6 +1361,146 @@ async function boot(): Promise<void> {
     showError(new Error("无法读取日程数据，请在思源中打开"));
   }
   store.startAutoRefresh(30000);
+}
+
+async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
+  closePopover(true);
+  closeColorFilterPicker();
+  closeWeatherPicker();
+  hideEventNoteTooltip();
+
+  const appEl = document.getElementById("app");
+  if (!appEl) {
+    throw new Error("找不到当前日程视图");
+  }
+
+  button.disabled = true;
+  const previousTitle = button.title;
+  button.title = "正在截图...";
+  document.body.classList.add("cb-screenshot-capturing");
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  try {
+    const canvas = await html2canvas(appEl, {
+      backgroundColor: getComputedStyle(document.body).backgroundColor || null,
+      scale: Math.min(window.devicePixelRatio || 1, 2),
+      useCORS: true
+    });
+    const blob = await canvasToPngBlob(canvas);
+    await saveScreenshotBlob(blob, screenshotFileName());
+  } finally {
+    document.body.classList.remove("cb-screenshot-capturing");
+    button.disabled = false;
+    button.title = previousTitle;
+  }
+}
+
+function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error("截图生成失败"));
+      }
+    }, "image/png");
+  });
+}
+
+function screenshotFileName(): string {
+  const startStr = fmtDate(calendar.view.activeStart);
+  const endStr = addDaysStr(fmtDate(calendar.view.activeEnd), -1);
+  const range = startStr === endStr ? startStr : `${startStr}_${endStr}`;
+  const viewName = currentViewKey() === "week" ? "周历块" : "日历块";
+  return `${viewName}-${range}.png`;
+}
+
+async function saveScreenshotBlob(blob: Blob, fileName: string): Promise<void> {
+  type FilePickerWindow = Window & {
+    showSaveFilePicker?: (options?: {
+      suggestedName?: string;
+      startIn?: "desktop" | "documents" | "downloads" | "music" | "pictures" | "videos";
+      types?: Array<{
+        description: string;
+        accept: Record<string, string[]>;
+      }>;
+    }) => Promise<{
+      createWritable: () => Promise<{
+        write: (data: Blob) => Promise<void>;
+        close: () => Promise<void>;
+      }>;
+    }>;
+  };
+  const picker = (window as FilePickerWindow).showSaveFilePicker;
+  if (picker) {
+    const pickerOptions = {
+      suggestedName: fileName,
+      startIn: "desktop" as const,
+      types: [{
+        description: "PNG 图片",
+        accept: { "image/png": [".png"] }
+      }]
+    };
+    let handle: Awaited<ReturnType<NonNullable<FilePickerWindow["showSaveFilePicker"]>>>;
+    try {
+      handle = await picker(pickerOptions);
+    } catch (err) {
+      if (!(err instanceof TypeError)) {
+        throw err;
+      }
+      const { startIn, ...fallbackOptions } = pickerOptions;
+      handle = await picker(fallbackOptions);
+    }
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function bootQuickAdd(): Promise<void> {
+  initThemeBridge();
+  try {
+    await store.load();
+  } catch (err) {
+    console.error("schedule-block: 日程数据加载失败", err);
+    showError(err);
+    return;
+  }
+
+  const notifyHost = (savedText: string | null) => {
+    try {
+      const channel = new BroadcastChannel("schedule-block-ui");
+      channel.postMessage(savedText
+        ? { type: "quickadd-saved", text: savedText }
+        : { type: "quickadd-cancel" }
+      );
+      channel.close();
+    } catch {
+      // BroadcastChannel 失败时忽略
+    }
+  };
+
+  const root = document.getElementById("app")!;
+  document.documentElement.classList.add("cb-quickadd-mode");
+  document.body.classList.add("cb-quickadd-mode");
+  root.innerHTML = `<div class="cb-quickadd-backdrop" aria-hidden="true"></div>`;
+  root.querySelector(".cb-quickadd-backdrop")?.addEventListener("mousedown", () => notifyHost(null));
+  openCreatePopover({
+    anchor: { x: window.innerWidth / 2 - 171, y: window.innerHeight / 2 - 180 },
+    docId: "",
+    onDone: ({ values }) => notifyHost(`已记日程: ${values.title || "（无标题）"}`),
+    onCancel: () => notifyHost(null)
+  });
 }
 
 boot();

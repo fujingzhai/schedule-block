@@ -39,6 +39,9 @@ interface InsertContext {
 export default class CalendarBlockPlugin extends Plugin {
   private topBarElement?: HTMLElement;
   private lastContext: InsertContext = { blockID: "", docID: "" };
+  private quickOverlay: HTMLElement | null = null;
+  private quickFrame: HTMLIFrameElement | null = null;
+  private uiChannel: BroadcastChannel | null = null;
 
   onload() {
     this.addIcons(`
@@ -72,11 +75,84 @@ export default class CalendarBlockPlugin extends Plugin {
         callback: () => this.insertAtCursor(view)
       });
     });
+
+    this.addCommand({
+      langKey: "scheduleQuickAdd",
+      langText: "添加日程",
+      hotkey: "⌥⌘K",
+      callback: () => this.openQuickAdd()
+    });
+
+    try {
+      this.uiChannel = new BroadcastChannel("schedule-block-ui");
+      this.uiChannel.onmessage = (e) => {
+        const msg = e.data || {};
+        if (msg.type === "quickadd-saved") {
+          showMessage(msg.text || "已记录日程", 3000);
+          this.closeQuickAdd();
+        } else if (msg.type === "quickadd-cancel") {
+          this.closeQuickAdd();
+        }
+      };
+    } catch {
+      this.uiChannel = null;
+    }
+  }
+
+  onunload() {
+    this.uiChannel?.close();
+    this.closeQuickAdd();
+  }
+
+  private openQuickAdd() {
+    this.closeQuickAdd();
+    const overlay = document.createElement("div");
+    overlay.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "z-index:9999",
+      "background:rgba(0,0,0,0.18)",
+      "backdrop-filter:blur(8px)",
+      "-webkit-backdrop-filter:blur(8px)"
+    ].join(";");
+    document.body.appendChild(overlay);
+
+    const frame = document.createElement("iframe");
+    frame.src = "/plugins/schedule-block/widget/index.html?view=quickadd";
+    frame.setAttribute("allowfullscreen", "true");
+    frame.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "width:100vw",
+      "height:100vh",
+      "border:0",
+      "z-index:10000",
+      "background:transparent"
+    ].join(";");
+    document.body.appendChild(frame);
+    this.quickOverlay = overlay;
+    this.quickFrame = frame;
+  }
+
+  private closeQuickAdd() {
+    if (this.quickFrame) {
+      this.quickFrame.remove();
+      this.quickFrame = null;
+    }
+    if (this.quickOverlay) {
+      this.quickOverlay.remove();
+      this.quickOverlay = null;
+    }
   }
 
   private openTopBarMenu(event: MouseEvent) {
     this.lastContext = getCurrentContext();
     const menu = new Menu("schedule-block-topbar");
+    menu.addItem({
+      icon: "iconCalendarBlock",
+      label: "添加日程",
+      click: () => this.openQuickAdd()
+    });
     VIEWS.forEach((view) => {
       menu.addItem({
         icon: "iconCalendarBlock",

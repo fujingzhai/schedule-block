@@ -76,7 +76,7 @@ export function openPopover(opts: PopoverOptions): void {
   el.className = "cb-popover";
   el.setAttribute("role", "dialog");
   el.innerHTML = `
-    <input class="cb-pop-title" type="text" placeholder="添加标题" spellcheck="false">
+    <input class="cb-pop-title" type="text" placeholder="添加日程" spellcheck="false">
     <div class="cb-pop-row cb-pop-when">
       <svg class="cb-pop-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8a8 8 0 0 1-8 8Zm.5-13H11v6l5.2 3.1l.8-1.2l-4.5-2.7Z"/></svg>
       <div class="cb-pop-when-fields">

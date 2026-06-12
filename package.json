@@ -1,6 +1,6 @@
 {
   "name": "schedule-block",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A SiYuan plugin for embedding day and week schedule blocks in documents.",
   "repository": "https://github.com/fujingzhai/schedule-block",
   "homepage": "",
@@ -20,6 +20,7 @@
     "@fullcalendar/daygrid": "^6.1.19",
     "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
+    "html2canvas": "^1.4.1",
     "siyuan": "^1.2.1"
   },
   "devDependencies": {
