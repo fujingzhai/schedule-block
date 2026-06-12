@@ -1,4 +1,5 @@
 import { Menu, Plugin, Protyle, fetchPost, getActiveEditor, getAllEditor, showMessage } from "siyuan";
+import { fmtDate, parseDateFromTitle } from "../shared/date";
 
 type ViewKey = "day" | "week";
 
@@ -115,12 +116,14 @@ export default class CalendarBlockPlugin extends Plugin {
   }
 
   /** 斜杠菜单使用编辑器原生插入，避免先插入再延迟删除触发块造成闪烁 */
-  private insertFromSlash(view: ViewKey, protyle: Protyle, nodeElement: HTMLElement) {
+  private async insertFromSlash(view: ViewKey, protyle: Protyle, nodeElement: HTMLElement) {
+    const context = contextFromProtyle(protyle, nodeElement);
+    const date = await defaultDateForDoc(context.docID);
     try {
-      protyle.insert(widgetMarkdown(view), true, true);
+      protyle.insert(widgetMarkdown(view, date), true, true);
     } catch (err) {
       console.error("schedule-block: protyle.insert 失败，回退到内核插入", err);
-      this.insertAtCursor(view, contextFromProtyle(protyle, nodeElement));
+      this.insertAtCursor(view, context);
     }
   }
 
@@ -133,14 +136,16 @@ export default class CalendarBlockPlugin extends Plugin {
     }
     try {
       const previousID = context.blockID && context.blockID !== docID ? context.blockID : undefined;
-      const operations = await insertWidgetBlock(view, docID, previousID);
+      const date = await defaultDateForDoc(docID);
+      const operations = await insertWidgetBlock(view, docID, date, previousID);
       const insertedID = operations?.[0]?.doOperations?.[0]?.id || "";
       if (isBlockID(insertedID)) {
         await post("/api/attr/setBlockAttrs", {
           id: insertedID,
           attrs: {
-            style: "height: 1030px;",
-            "custom-calendar-view": view
+            style: "height: 1330px;",
+            "custom-calendar-view": view,
+            "custom-calendar-date": date
           }
         });
       }
@@ -150,21 +155,36 @@ export default class CalendarBlockPlugin extends Plugin {
   }
 }
 
-function widgetMarkdown(view: ViewKey): string {
-  const src = `/plugins/schedule-block/widget/index.html?view=${view}`;
+function widgetMarkdown(view: ViewKey, date = fmtDate(new Date())): string {
+  const src = `/plugins/schedule-block/widget/index.html?view=${encodeURIComponent(view)}&date=${encodeURIComponent(date)}`;
   return `<iframe src="${src}" data-subtype="widget" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>`;
 }
 
-async function insertWidgetBlock(view: ViewKey, docID: string, previousID?: string): Promise<BlockOperation[]> {
+async function insertWidgetBlock(view: ViewKey, docID: string, date: string, previousID?: string): Promise<BlockOperation[]> {
   const payload: any = {
     dataType: "markdown",
-    data: widgetMarkdown(view),
+    data: widgetMarkdown(view, date),
     parentID: docID
   };
   if (previousID) {
     payload.previousID = previousID;
   }
   return post<BlockOperation[]>("/api/block/insertBlock", payload);
+}
+
+async function defaultDateForDoc(docID: string): Promise<string> {
+  const today = fmtDate(new Date());
+  if (!isBlockID(docID)) {
+    return today;
+  }
+  try {
+    const rows = await post<Array<{ content?: string }>>("/api/query/sql", {
+      stmt: `SELECT content FROM blocks WHERE id='${docID}' LIMIT 1`
+    });
+    return parseDateFromTitle(rows?.[0]?.content || "") || today;
+  } catch {
+    return today;
+  }
 }
 
 function post<T>(url: string, data?: unknown): Promise<T> {

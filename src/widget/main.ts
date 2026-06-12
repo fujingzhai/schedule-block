@@ -1,14 +1,16 @@
-import { Calendar, DateSelectArg, EventApi, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
+import { Calendar, DateSelectArg, EventApi, EventClickArg, EventDropArg, EventHoveringArg, EventInput } from "@fullcalendar/core";
 import zhCnLocale from "@fullcalendar/core/locales/zh-cn";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin, { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import { getBlockAttrs, setBlockAttrs, getDocTitle, getRootId } from "./api";
 import { CalEvent, EventStore } from "./store";
+import { WeatherKind, WeatherStore, WEATHER_LABELS } from "./weather";
 import { initThemeBridge } from "./theme";
 import {
   closePopover,
   DEFAULT_COLOR,
   openPopover,
+  PALETTE,
   PopoverValues,
   valuesToRange
 } from "./popover";
@@ -28,12 +30,15 @@ const VIEW_KEY: Record<string, ViewKey> = {
 const VIEW_ATTR = "custom-calendar-view";
 const DATE_ATTR = "custom-calendar-date";
 const DURATION_ATTR = "custom-calendar-default-duration";
-const DEFAULT_HEIGHT = "1030px";
-const DEFAULT_DURATION_MINUTES = 60;
+// 完整显示 24 小时所需高度：时间网格 48 槽 × 24px = 1152px ＋ 表头/全天行/工具栏约 167px，再留余量
+const DEFAULT_HEIGHT = "1330px";
+const DEFAULT_DURATION_MINUTES = 30;
 const DURATION_OPTIONS = [15, 30, 45, 60];
 const LAST_COLOR_KEY = "schedule-block-last-color";
+const SNAP_MINUTES = 15;
 
 const store = new EventStore();
+const weatherStore = new WeatherStore();
 let calendar: Calendar;
 let blockId = "";
 let docId = "";
@@ -42,6 +47,12 @@ let persistedViewKey: ViewKey | "" = "";
 let defaultDurationMinutes = DEFAULT_DURATION_MINUTES;
 let suppressUntil = 0;
 let anchorEditor: { el: HTMLElement; dispose(): void } | null = null;
+let weatherPicker: { el: HTMLElement; date: string; dispose(): void } | null = null;
+let colorFilterPicker: { el: HTMLElement; dispose(): void } | null = null;
+let noteTooltip: HTMLElement | null = null;
+let noteTooltipDispose: (() => void) | null = null;
+const visibleColors = new Set<string>(PALETTE);
+let toolbarCreatePopoverOpen = false;
 
 function lastColor(): string {
   try {
@@ -83,6 +94,42 @@ function durationToFullCalendar(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+function roundedCurrentDate(): Date {
+  const date = new Date();
+  date.setSeconds(0, 0);
+  const minutes = date.getMinutes();
+  const rounded = Math.ceil(minutes / SNAP_MINUTES) * SNAP_MINUTES;
+  if (rounded >= 60) {
+    date.setHours(date.getHours() + 1, 0, 0, 0);
+  } else {
+    date.setMinutes(rounded, 0, 0);
+  }
+  return date;
+}
+
+function weatherIcon(kind: WeatherKind | ""): string {
+  if (kind === "sunny") {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  }
+  if (kind === "overcast") {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 17.5h10a4 4 0 0 0 .4-8A5.8 5.8 0 0 0 6.6 8a4.8 4.8 0 0 0 .6 9.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  }
+  if (kind === "rain") {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 14.5h10a4 4 0 0 0 .4-8A5.8 5.8 0 0 0 6.6 5a4.8 4.8 0 0 0 .6 9.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 18.5l-1 2M12.5 18.5l-1 2M17 18.5l-1 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  }
+  if (kind === "snow") {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 14.5h10a4 4 0 0 0 .4-8A5.8 5.8 0 0 0 6.6 5a4.8 4.8 0 0 0 .6 9.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 19h.01M13 20.5h.01M17 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.2 13.5a4.8 4.8 0 0 1 7.6 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+}
+
+function weatherButtonHtml(date: string): string {
+  const kind = weatherStore.get(date) || "";
+  const label = kind ? WEATHER_LABELS[kind] : "选择天气";
+  const activeClass = kind ? " cb-weather-btn--active" : "";
+  return `<button type="button" class="cb-weather-btn${activeClass}" data-date="${date}" data-weather="${kind}" aria-label="${label}" title="${label}">${weatherIcon(kind)}</button>`;
+}
+
 function applyEventColor(event: EventApi, color: string): void {
   event.setProp("backgroundColor", color);
   event.setProp("borderColor", "transparent");
@@ -107,6 +154,32 @@ function toFC(event: CalEvent): EventInput {
     borderColor: "transparent",
     textColor: textColorFor(event.color)
   };
+}
+
+function isColorFilterAll(): boolean {
+  return visibleColors.size === PALETTE.length;
+}
+
+function visibleFilteredEvents(): CalEvent[] {
+  const events = store.visibleEvents();
+  if (isColorFilterAll()) {
+    return events;
+  }
+  return events.filter((event) => visibleColors.has(event.color));
+}
+
+function syncColorFilterButton(root: HTMLElement): void {
+  const btn = root.querySelector(".cb-btn-filter") as HTMLElement | null;
+  if (btn) {
+    btn.classList.toggle("cb-icon-btn--active", !isColorFilterAll());
+  }
+}
+
+function selectAllColors(): void {
+  visibleColors.clear();
+  for (const color of PALETTE) {
+    visibleColors.add(color);
+  }
 }
 
 function eventToValues(event: CalEvent): PopoverValues {
@@ -149,6 +222,57 @@ function serializeRange(event: { start: Date | null; end: Date | null; allDay: b
 
 function refresh(): void {
   calendar.refetchEvents();
+}
+
+function positionNoteTooltip(x: number, y: number): void {
+  if (!noteTooltip) {
+    return;
+  }
+  const gap = 12;
+  const margin = 8;
+  const rect = noteTooltip.getBoundingClientRect();
+  let left = x + gap;
+  let top = y + gap;
+  if (left + rect.width + margin > window.innerWidth) {
+    left = x - rect.width - gap;
+  }
+  if (top + rect.height + margin > window.innerHeight) {
+    top = y - rect.height - gap;
+  }
+  noteTooltip.style.left = `${Math.max(margin, left)}px`;
+  noteTooltip.style.top = `${Math.max(margin, top)}px`;
+}
+
+function hideEventNoteTooltip(): void {
+  noteTooltipDispose?.();
+  noteTooltipDispose = null;
+  noteTooltip?.remove();
+  noteTooltip = null;
+}
+
+function showEventNoteTooltip(info: EventHoveringArg): void {
+  const note = store.get(info.event.id)?.note.trim();
+  if (!note) {
+    return;
+  }
+  hideEventNoteTooltip();
+  const tooltip = document.createElement("div");
+  tooltip.className = "cb-note-tooltip";
+  tooltip.textContent = note;
+  document.body.appendChild(tooltip);
+  noteTooltip = tooltip;
+
+  const move = (event: MouseEvent) => positionNoteTooltip(event.clientX, event.clientY);
+  info.el.addEventListener("mousemove", move);
+  noteTooltipDispose = () => info.el.removeEventListener("mousemove", move);
+
+  const event = info.jsEvent;
+  if (event) {
+    positionNoteTooltip(event.clientX, event.clientY);
+  } else {
+    const rect = info.el.getBoundingClientRect();
+    positionNoteTooltip(rect.right, rect.top);
+  }
 }
 
 /* ---------- 交互回调 ---------- */
@@ -254,29 +378,62 @@ function onSelect(info: DateSelectArg): void {
         draft?.remove();
       }
       suppressUntil = Date.now() + 250;
+    },
+    onCancel: () => {
+      window.clearTimeout(draftSaveTimer);
+      draft?.remove();
+      if (draftSavedId) {
+        store.remove(draftSavedId).then(refresh).catch(showError);
+      }
+      suppressUntil = Date.now() + 250;
     }
   });
+}
+
+let lastEmptyClick: { time: number; x: number; y: number; allDay: boolean; date: Date | null } = { time: 0, x: 0, y: 0, allDay: false, date: null };
+let lastCreateFromClick = 0;
+
+/** 在空白处新建（双击触发）：按默认时长生成选区，复用拖选的创建流程 */
+function createAtPoint(date: Date, allDay: boolean): void {
+  lastCreateFromClick = Date.now();
+  if (allDay) {
+    calendar.select({ start: date, allDay: true });
+    return;
+  }
+  calendar.select(date, addMinutes(date, defaultDurationMinutes));
 }
 
 function onDateClick(info: DateClickArg): void {
   if (Date.now() < suppressUntil) {
     return;
   }
-  if (info.allDay) {
-    calendar.select({ start: info.date, allDay: true });
+  // 对齐 Notion：空白处单击不新建，双击或拖选才新建。
+  // FullCalendar 的 jsEvent 是 PointerEvent（Chromium 下 detail 恒为 0），无法用原生连击计数，
+  // 这里按"450ms 内同一位置（8px 内）连点两次"判定双击。
+  const now = Date.now();
+  const x = info.jsEvent?.clientX ?? 0;
+  const y = info.jsEvent?.clientY ?? 0;
+  const isDouble = now - lastEmptyClick.time < 450
+    && Math.abs(x - lastEmptyClick.x) < 8
+    && Math.abs(y - lastEmptyClick.y) < 8
+    && info.allDay === lastEmptyClick.allDay;
+  lastEmptyClick = isDouble
+    ? { time: 0, x: 0, y: 0, allDay: false, date: null }
+    : { time: now, x, y, allDay: info.allDay, date: info.date };
+  if (!isDouble) {
     return;
   }
-  calendar.select(info.date, addMinutes(info.date, defaultDurationMinutes));
+  createAtPoint(info.date, info.allDay);
 }
 
 function onEventClick(info: EventClickArg): void {
   info.jsEvent.preventDefault();
+  hideEventNoteTooltip();
   const stored = store.get(info.event.id);
   if (!stored) {
     return;
   }
-  const oldColor = stored.color;
-  const oldTitle = stored.title;
+  const original = { ...stored };
   let editInteracted = false;
   let latestEditValues = eventToValues(stored);
   let editSaveTimer = 0;
@@ -333,8 +490,25 @@ function onEventClick(info: EventClickArg): void {
       if (editInteracted) {
         persistEdit(latestEditValues).catch(showError);
       } else {
-        info.event.setProp("title", oldTitle);
-        applyEventColor(info.event, oldColor);
+        info.event.setProp("title", original.title);
+        applyEventColor(info.event, original.color);
+      }
+    },
+    onCancel: () => {
+      window.clearTimeout(editSaveTimer);
+      if (editInteracted) {
+        // 回滚到打开弹窗前的原始内容
+        store.update(stored.id, {
+          title: original.title,
+          start: original.start,
+          end: original.end,
+          allDay: original.allDay,
+          color: original.color,
+          note: original.note
+        }).then(refresh).catch(showError);
+      } else {
+        info.event.setProp("title", original.title);
+        applyEventColor(info.event, original.color);
       }
     }
   });
@@ -342,6 +516,7 @@ function onEventClick(info: EventClickArg): void {
 
 async function onEventMutate(info: EventDropArg | EventResizeDoneArg): Promise<void> {
   closePopover(true);
+  hideEventNoteTooltip();
   const event = info.event;
   const stored = store.get(event.id);
   if (!stored) {
@@ -433,6 +608,205 @@ function closeAnchorEditor(): void {
   el.remove();
 }
 
+function closeWeatherPicker(): void {
+  if (!weatherPicker) {
+    return;
+  }
+  const { el, dispose } = weatherPicker;
+  weatherPicker = null;
+  dispose();
+  el.remove();
+}
+
+function closeColorFilterPicker(): void {
+  if (!colorFilterPicker) {
+    return;
+  }
+  const { el, dispose } = colorFilterPicker;
+  colorFilterPicker = null;
+  dispose();
+  el.remove();
+}
+
+function syncColorFilterPicker(): void {
+  if (!colorFilterPicker) {
+    return;
+  }
+  const allBtn = colorFilterPicker.el.querySelector(".cb-filter-all") as HTMLElement | null;
+  allBtn?.classList.toggle("cb-filter-all--active", isColorFilterAll());
+  colorFilterPicker.el.querySelectorAll<HTMLButtonElement>(".cb-filter-swatch").forEach((btn) => {
+    const color = btn.dataset.color || "";
+    btn.classList.toggle("cb-filter-swatch--active", visibleColors.has(color));
+  });
+}
+
+function openColorFilterPicker(anchor: HTMLElement): void {
+  if (colorFilterPicker) {
+    closeColorFilterPicker();
+    return;
+  }
+  closePopover(true);
+  closeAnchorEditor();
+  closeWeatherPicker();
+  const el = document.createElement("div");
+  el.className = "cb-filter-picker";
+  el.setAttribute("role", "dialog");
+  el.innerHTML = `<button type="button" class="cb-filter-all" aria-label="显示全部颜色" title="显示全部颜色">全部</button>` + PALETTE.map((color) => {
+    const active = visibleColors.has(color) ? " cb-filter-swatch--active" : "";
+    return `<button type="button" class="cb-filter-swatch${active}" data-color="${color}" style="background:${color}" aria-label="筛选颜色 ${color}" title="筛选颜色 ${color}"></button>`;
+  }).join("");
+  document.body.appendChild(el);
+
+  el.querySelector<HTMLButtonElement>(".cb-filter-all")?.addEventListener("click", () => {
+    selectAllColors();
+    syncColorFilterPicker();
+    syncColorFilterButton(document.getElementById("app")!);
+    refresh();
+  });
+
+  el.querySelectorAll<HTMLButtonElement>(".cb-filter-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const color = btn.dataset.color || "";
+      if (!color) {
+        return;
+      }
+      if (isColorFilterAll()) {
+        visibleColors.clear();
+        visibleColors.add(color);
+      } else if (visibleColors.size === 1 && visibleColors.has(color)) {
+        selectAllColors();
+      } else if (visibleColors.has(color)) {
+        visibleColors.delete(color);
+        if (visibleColors.size === 0) {
+          selectAllColors();
+        }
+      } else {
+        visibleColors.add(color);
+      }
+      syncColorFilterPicker();
+      syncColorFilterButton(document.getElementById("app")!);
+      refresh();
+    });
+  });
+
+  const onOutsideMousedown = (event: MouseEvent) => {
+    const target = event.target as Node;
+    if (!el.contains(target) && !anchor.contains(target)) {
+      closeColorFilterPicker();
+    }
+  };
+  const onKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      closeColorFilterPicker();
+    }
+  };
+  const timer = window.setTimeout(() => {
+    document.addEventListener("mousedown", onOutsideMousedown, true);
+    document.addEventListener("keydown", onKeydown, true);
+  }, 0);
+  const dispose = () => {
+    window.clearTimeout(timer);
+    document.removeEventListener("mousedown", onOutsideMousedown, true);
+    document.removeEventListener("keydown", onKeydown, true);
+  };
+  colorFilterPicker = { el, dispose };
+
+  const margin = 8;
+  const gap = 8;
+  const rect = anchor.getBoundingClientRect();
+  const { width, height } = el.getBoundingClientRect();
+  let x = rect.left;
+  let y = rect.bottom + gap;
+  x = Math.min(Math.max(x, margin), Math.max(window.innerWidth - width - margin, margin));
+  if (y + height > window.innerHeight - margin) {
+    y = rect.top - height - gap;
+  }
+  y = Math.min(Math.max(y, margin), Math.max(window.innerHeight - height - margin, margin));
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+}
+
+function refreshWeatherHeaders(): void {
+  document.querySelectorAll<HTMLElement>(".cb-weather-btn[data-date]").forEach((btn) => {
+    const date = btn.dataset.date || "";
+    const kind = weatherStore.get(date) || "";
+    const label = kind ? WEATHER_LABELS[kind] : "选择天气";
+    btn.dataset.weather = kind;
+    btn.classList.toggle("cb-weather-btn--active", Boolean(kind));
+    btn.setAttribute("aria-label", label);
+    btn.setAttribute("title", label);
+    btn.innerHTML = weatherIcon(kind);
+  });
+}
+
+function openWeatherPicker(anchor: HTMLElement, date: string): void {
+  if (weatherPicker?.date === date) {
+    closeWeatherPicker();
+    return;
+  }
+  closePopover(true);
+  closeAnchorEditor();
+  closeWeatherPicker();
+  closeColorFilterPicker();
+  const current = weatherStore.get(date) || "";
+  const el = document.createElement("div");
+  el.className = "cb-weather-picker";
+  el.setAttribute("role", "dialog");
+  el.innerHTML = (Object.keys(WEATHER_LABELS) as WeatherKind[]).map((kind) => {
+    const active = kind === current ? " cb-weather-option--active" : "";
+    const label = WEATHER_LABELS[kind];
+    return `<button type="button" class="cb-weather-option${active}" data-weather="${kind}" aria-label="${label}" title="${label}">${weatherIcon(kind)}</button>`;
+  }).join("");
+  document.body.appendChild(el);
+
+  el.querySelectorAll<HTMLButtonElement>(".cb-weather-option").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const kind = btn.dataset.weather as WeatherKind;
+      const next = kind === weatherStore.get(date) ? "" : kind;
+      weatherStore.set(date, next).then(() => {
+        refreshWeatherHeaders();
+        closeWeatherPicker();
+      }).catch(showError);
+    });
+  });
+
+  const onOutsideMousedown = (event: MouseEvent) => {
+    const target = event.target as Node;
+    if (!el.contains(target) && !anchor.contains(target)) {
+      closeWeatherPicker();
+    }
+  };
+  const onKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      closeWeatherPicker();
+    }
+  };
+  const timer = window.setTimeout(() => {
+    document.addEventListener("mousedown", onOutsideMousedown, true);
+    document.addEventListener("keydown", onKeydown, true);
+  }, 0);
+  const dispose = () => {
+    window.clearTimeout(timer);
+    document.removeEventListener("mousedown", onOutsideMousedown, true);
+    document.removeEventListener("keydown", onKeydown, true);
+  };
+  weatherPicker = { el, date, dispose };
+
+  const margin = 8;
+  const gap = 8;
+  const rect = anchor.getBoundingClientRect();
+  const { width, height } = el.getBoundingClientRect();
+  let x = rect.left + rect.width / 2 - width / 2;
+  let y = rect.bottom + gap;
+  x = Math.min(Math.max(x, margin), Math.max(window.innerWidth - width - margin, margin));
+  if (y + height > window.innerHeight - margin) {
+    y = rect.top - height - gap;
+  }
+  y = Math.min(Math.max(y, margin), Math.max(window.innerHeight - height - margin, margin));
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+}
+
 function positionAnchorEditor(el: HTMLElement, anchor: HTMLElement): void {
   const margin = 8;
   const rect = anchor.getBoundingClientRect();
@@ -446,17 +820,23 @@ function positionAnchorEditor(el: HTMLElement, anchor: HTMLElement): void {
 }
 
 function editAnchorDate(anchor: HTMLElement): void {
+  if (anchorEditor) {
+    closeAnchorEditor();
+    return;
+  }
   closePopover(true);
   closeAnchorEditor();
+  closeWeatherPicker();
+  closeColorFilterPicker();
   const view = currentViewKey();
   const current = anchorLabel(view);
   const el = document.createElement("div");
   el.className = "cb-anchor-editor";
   el.setAttribute("role", "dialog");
   el.innerHTML = `
-    <label class="cb-anchor-label">${view === "week" ? "绑定周" : "绑定日期"}</label>
+    <label class="cb-anchor-label">${view === "week" ? "绑定周次" : "绑定日期"}</label>
     <input class="cb-anchor-input" type="${view === "week" ? "week" : "date"}">
-    <label class="cb-anchor-label">默认时长</label>
+    <label class="cb-anchor-label">默认事件时长</label>
     <select class="cb-duration-select">
       ${DURATION_OPTIONS.map((m) => `<option value="${m}">${durationLabel(m)}</option>`).join("")}
     </select>
@@ -512,7 +892,8 @@ function editAnchorDate(anchor: HTMLElement): void {
   el.addEventListener("keydown", onKeydown);
 
   const onOutsideMousedown = (event: MouseEvent) => {
-    if (!el.contains(event.target as Node) && event.target !== anchor) {
+    const target = event.target as Node;
+    if (!el.contains(target) && !anchor.contains(target)) {
       closeAnchorEditor();
     }
   };
@@ -536,8 +917,11 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
   root.innerHTML = `
     <div class="cb-toolbar">
       <div class="cb-toolbar-left">
-        <button type="button" class="cb-icon-btn cb-btn-settings" aria-label="修改绑定${view === "week" ? "周" : "日期"}" title="修改绑定${view === "week" ? "周" : "日期"}">
+        <button type="button" class="cb-icon-btn cb-btn-settings" aria-label="修改绑定${view === "week" ? "周次" : "日期"}" title="修改绑定${view === "week" ? "周次" : "日期"}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5l-2-3.5l-2.4 1a8.4 8.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A8.4 8.4 0 0 0 7 6.5l-2.4-1l-2 3.5l2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5l2 3.5l2.4-1a8.4 8.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a8.4 8.4 0 0 0 2.6-1.5l2.4 1l2-3.5l-2-1.5ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>
+        </button>
+        <button type="button" class="cb-icon-btn cb-btn-filter" aria-label="按颜色筛选日程" title="按颜色筛选日程">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h18l-7 8v5.2l-4 2V13L3 5Z"/></svg>
         </button>
       </div>
       <div class="cb-toolbar-center">
@@ -560,6 +944,9 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
   root.querySelector(".cb-btn-settings")!.addEventListener("click", (event) => {
     editAnchorDate(event.currentTarget as HTMLElement);
   });
+  root.querySelector(".cb-btn-filter")!.addEventListener("click", (event) => {
+    openColorFilterPicker(event.currentTarget as HTMLElement);
+  });
   root.querySelector(".cb-btn-anchor")!.addEventListener("click", () => {
     if (anchorDate) {
       calendar.gotoDate(anchorDate);
@@ -568,29 +955,36 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
   root.querySelector(".cb-nav-prev")!.addEventListener("click", () => calendar.prev());
   root.querySelector(".cb-nav-next")!.addEventListener("click", () => calendar.next());
   root.querySelector(".cb-btn-new")!.addEventListener("click", (event) => {
-    const base = anchorDate ? parseDate(anchorDate) : new Date();
-    base.setMinutes(0, 0, 0);
-    base.setHours(base.getHours() + 1);
+    if (toolbarCreatePopoverOpen) {
+      closePopover();
+      return;
+    }
+    const base = roundedCurrentDate();
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    openPopover({
-      mode: "create",
-      anchor: { x: rect.left, y: rect.bottom + 6, rect },
-      values: {
-        title: "",
-        allDay: false,
-        startDate: fmtDate(base),
-        startTime: fmtTime(base),
-        endDate: fmtDate(base),
-        endTime: fmtTime(addMinutes(base, defaultDurationMinutes)),
-        color: lastColor(),
-        note: ""
-      },
-      onSave: async (v) => {
-        rememberColor(v.color);
-        const range = valuesToRange(v);
+    const values: PopoverValues = {
+      title: "",
+      allDay: false,
+      startDate: fmtDate(base),
+      startTime: fmtTime(base),
+      endDate: fmtDate(base),
+      endTime: fmtTime(addMinutes(base, defaultDurationMinutes)),
+      color: lastColor(),
+      note: ""
+    };
+    let savedId = "";
+    let interacted = false;
+    let latestValues = values;
+    let saveTimer = 0;
+    const persistNew = async (v: PopoverValues, close = false) => {
+      interacted = true;
+      latestValues = v;
+      rememberColor(v.color);
+      const range = valuesToRange(v);
+      if (!savedId) {
+        savedId = newEventId();
         await store.add({
-          id: newEventId(),
+          id: savedId,
           title: v.title,
           start: range.start,
           end: range.end,
@@ -599,11 +993,57 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
           note: v.note,
           docId: docId
         });
+      } else {
+        await store.update(savedId, {
+          title: v.title,
+          start: range.start,
+          end: range.end,
+          allDay: range.allDay,
+          color: v.color,
+          note: v.note
+        });
+      }
+      if (close) {
         refresh();
         calendar.gotoDate(range.start);
       }
+    };
+    openPopover({
+      mode: "create",
+      anchor: { x: rect.left, y: rect.bottom + 6, rect },
+      ignoreOutside: [target],
+      values,
+      onValuesChange: (v) => {
+        interacted = true;
+        latestValues = v;
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => {
+          persistNew(latestValues).catch(showError);
+        }, 500);
+      },
+      onSave: async (v) => {
+        toolbarCreatePopoverOpen = false;
+        window.clearTimeout(saveTimer);
+        await persistNew(v, true).catch(showError);
+      },
+      onClose: () => {
+        toolbarCreatePopoverOpen = false;
+        window.clearTimeout(saveTimer);
+        if (interacted) {
+          persistNew(latestValues, true).catch(showError);
+        }
+      },
+      onCancel: () => {
+        toolbarCreatePopoverOpen = false;
+        window.clearTimeout(saveTimer);
+        if (savedId) {
+          store.remove(savedId).then(refresh).catch(showError);
+        }
+      }
     });
+    toolbarCreatePopoverOpen = true;
   });
+  syncColorFilterButton(root);
 }
 
 function syncToolbar(root: HTMLElement): void {
@@ -714,6 +1154,11 @@ async function boot(): Promise<void> {
     storeReady = false;
     console.error("schedule-block: 日程数据加载失败", err);
   }
+  try {
+    await weatherStore.load();
+  } catch (err) {
+    console.warn("schedule-block: 天气数据加载失败", err);
+  }
 
   calendar = new Calendar(root.querySelector(".cb-calendar") as HTMLElement, {
     plugins: [timeGridPlugin, interactionPlugin],
@@ -740,6 +1185,8 @@ async function boot(): Promise<void> {
     scrollTimeReset: false,
     slotDuration: "00:30:00",
     snapDuration: "00:15:00",
+    // 槽高 24px / 30 分钟，12px 恰为 15 分钟：保证最短日程的显示高度与真实时长一致，不越界遮挡下一条
+    eventMinHeight: 12,
     defaultTimedEventDuration: durationToFullCalendar(defaultDurationMinutes),
     slotLabelFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
     eventTimeFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
@@ -748,20 +1195,24 @@ async function boot(): Promise<void> {
       const dow = arg.date.toLocaleDateString("zh-CN", { weekday: "short" });
       const dateLabel = `${arg.date.getMonth() + 1}月${arg.date.getDate()}日`;
       const lunarLabel = lunarDateLabel(arg.date);
+      const dateKey = fmtDate(arg.date);
       const todayClass = arg.isToday ? " cb-dh--today" : "";
+      const weather = weatherButtonHtml(dateKey);
       if (VIEW_KEY[arg.view.type] === "day") {
         return {
-          html: `<div class="cb-dh cb-dh--single${todayClass}"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-main">${dow}</span><span class="cb-dh-lunar">${lunarLabel}</span></div>`
+          html: `<div class="cb-dh cb-dh--single${todayClass}"><div class="cb-dh-top"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-lunar">${lunarLabel}</span></div><div class="cb-dh-status"><span class="cb-dh-main">${dow}</span>${weather}</div></div>`
         };
       }
       return {
-        html: `<div class="cb-dh cb-dh--week${todayClass}"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-main">${dow}</span><span class="cb-dh-lunar">${lunarLabel}</span></div>`
+        html: `<div class="cb-dh cb-dh--week${todayClass}"><div class="cb-dh-top"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-lunar">${lunarLabel}</span></div><div class="cb-dh-status"><span class="cb-dh-main">${dow}</span>${weather}</div></div>`
       };
     },
-    events: (_info, success) => success(store.visibleEvents().map(toFC)),
+    events: (_info, success) => success(visibleFilteredEvents().map(toFC)),
     select: onSelect,
     dateClick: onDateClick,
     eventClick: onEventClick,
+    eventMouseEnter: showEventNoteTooltip,
+    eventMouseLeave: hideEventNoteTooltip,
     eventDrop: onEventMutate,
     eventResize: onEventMutate,
     datesSet: () => {
@@ -796,6 +1247,7 @@ async function boot(): Promise<void> {
       isDirty = true;
     }
   };
+  weatherStore.onRemoteChange = refreshWeatherHeaders;
 
   const resizeObserver = new ResizeObserver((entries) => {
     for (const entry of entries) {
@@ -813,11 +1265,56 @@ async function boot(): Promise<void> {
   const calendarEl = root.querySelector(".cb-calendar") as HTMLElement;
   if (calendarEl) {
     resizeObserver.observe(calendarEl);
+    calendarEl.addEventListener("click", (ev) => {
+      const btn = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".cb-weather-btn[data-date]");
+      if (!btn) {
+        return;
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      const date = btn.dataset.date || "";
+      if (date) {
+        openWeatherPicker(btn, date);
+      }
+    });
+    // 双击新建的兜底：个别环境下第二次 dateClick 会被 FullCalendar 吞掉，用原生 dblclick 补判
+    calendarEl.addEventListener("dblclick", (ev) => {
+      if (Date.now() - lastCreateFromClick < 500 || Date.now() < suppressUntil) {
+        return;
+      }
+      const last = lastEmptyClick;
+      if (!last.date || Date.now() - last.time > 600) {
+        return;
+      }
+      if (Math.abs(ev.clientX - last.x) > 8 || Math.abs(ev.clientY - last.y) > 8) {
+        return;
+      }
+      if ((ev.target as HTMLElement | null)?.closest(".fc-event")) {
+        return;
+      }
+      const { date, allDay } = last;
+      lastEmptyClick = { time: 0, x: 0, y: 0, allDay: false, date: null };
+      createAtPoint(date, allDay);
+    });
   }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && isDirty) {
+      isDirty = false;
+      refresh();
+    }
+  });
+  window.addEventListener("focus", () => {
+    if (isDirty) {
+      isDirty = false;
+      refresh();
+    }
+  });
 
   if (!storeReady) {
     showError(new Error("无法读取日程数据，请在思源中打开"));
   }
+  store.startAutoRefresh(30000);
 }
 
 boot();

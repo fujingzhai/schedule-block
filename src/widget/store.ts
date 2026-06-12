@@ -31,6 +31,8 @@ export class EventStore {
   private undoStack: CalEvent[][] = [];
   /** 最近一次成功读到或写出的文件内容，保存前先写入 .bak 作为回退 */
   private lastGoodText: string | null = null;
+  private persistLock: Promise<void> = Promise.resolve();
+  private autoRefreshTimer: number | null = null;
 
   constructor() {
     try {
@@ -59,7 +61,10 @@ export class EventStore {
       throw err;
     }
     if (!text) {
-      // 文件尚不存在：全新开始
+      if (this.events.length > 0) {
+        this.loadFailed = true;
+        throw new Error("日程数据读取失败（返回空），已禁止保存以防覆盖");
+      }
       this.events = [];
       this.lastGoodText = null;
       this.loadFailed = false;
@@ -81,7 +86,6 @@ export class EventStore {
       this.loadFailed = false;
     } catch {
       this.loadFailed = true;
-      this.events = [];
       throw new Error("日程数据文件解析失败，已禁止保存以防覆盖（可检查 data/storage/schedule-block/events.json）");
     }
   }
@@ -90,12 +94,12 @@ export class EventStore {
     return this.events.find((e) => e.id === id);
   }
 
-  /** 正常嵌入文档时仅显示所属文档日程；独立打开且无文档 ID 时不做过滤，便于调试。 */
+  /** 正常嵌入文档时显示所属文档日程；空 docId 为历史全局事件，必须兼容显示。 */
   visibleEvents(): CalEvent[] {
     if (!this.docId) {
       return this.events;
     }
-    return this.events.filter((e) => e.docId === this.docId);
+    return this.events.filter((e) => !e.docId || e.docId === this.docId);
   }
 
   canUndo(): boolean {
@@ -163,23 +167,53 @@ export class EventStore {
     }
   }
 
+  startAutoRefresh(intervalMs: number = 30000): void {
+    this.stopAutoRefresh();
+    this.autoRefreshTimer = window.setInterval(async () => {
+      if (this.loadFailed) {
+        try {
+          await this.load();
+          this.onRemoteChange?.();
+        } catch {
+          // 自愈失败时保留 loadFailed 状态，下次间隔再试
+        }
+      }
+    }, intervalMs);
+  }
+
+  stopAutoRefresh(): void {
+    if (this.autoRefreshTimer !== null) {
+      window.clearInterval(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+  }
+
   private async persist(): Promise<void> {
     this.ensureWritable();
-    const payload = {
-      version: 2,
-      updated: new Date().toISOString(),
-      events: this.events
-    };
-    const text = JSON.stringify(payload, null, 2);
-    if (this.lastGoodText && this.lastGoodText !== text) {
-      try {
-        await writeWorkspaceFile(BAK_FILE, this.lastGoodText);
-      } catch {
-        // 备份失败不阻塞正常保存
+    const run = async () => {
+      const payload = {
+        version: 2,
+        updated: new Date().toISOString(),
+        events: this.events
+      };
+      const text = JSON.stringify(payload, null, 2);
+      if (this.lastGoodText && this.lastGoodText !== text) {
+        try {
+          await writeWorkspaceFile(BAK_FILE, this.lastGoodText);
+        } catch {
+          // 备份失败不阻塞正常保存
+        }
       }
-    }
-    await writeWorkspaceFile(FILE, text);
-    this.lastGoodText = text;
+      await writeWorkspaceFile(FILE, text);
+      this.lastGoodText = text;
+    };
+    // 串行化写入；无论前一次成功或失败都继续执行本次，错误只抛给各自的调用方
+    const task = this.persistLock.then(run, run);
+    this.persistLock = task.then(
+      () => undefined,
+      () => undefined
+    );
+    await task;
     this.channel?.postMessage("changed");
   }
 }

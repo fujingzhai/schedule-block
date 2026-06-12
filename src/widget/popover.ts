@@ -38,12 +38,15 @@ export interface PopoverOptions {
   mode: "create" | "edit";
   anchor: PopoverAnchor;
   values: PopoverValues;
+  ignoreOutside?: HTMLElement[];
   onSave(values: PopoverValues): void;
   onDelete?(): void;
   onTitleChange?(title: string): void;
   onColorChange?(color: string): void;
   onValuesChange?(values: PopoverValues): void;
-  /** 任何方式关闭（保存、删除、取消、点击外部）都会回调 */
+  /** 显式取消（取消按钮 / Esc）：调用方应撤回本次自动保存；未提供时退回 onClose */
+  onCancel?(): void;
+  /** 隐式关闭（点击外部等）时回调；保存、删除走各自回调，取消优先走 onCancel */
   onClose?(): void;
 }
 
@@ -79,12 +82,12 @@ export function openPopover(opts: PopoverOptions): void {
       <div class="cb-pop-when-fields">
         <div class="cb-pop-dates">
           <input class="cb-start-date" type="date">
-          <span class="cb-date-sep">至</span>
+          <span class="cb-date-sep">→</span>
           <input class="cb-end-date" type="date">
         </div>
         <div class="cb-pop-times">
           <input class="cb-start-time" type="time">
-          <span class="cb-time-sep">–</span>
+          <span class="cb-time-sep">→</span>
           <input class="cb-end-time" type="time">
         </div>
         <label class="cb-allday"><input class="cb-allday-check" type="checkbox">全天</label>
@@ -134,7 +137,7 @@ export function openPopover(opts: PopoverOptions): void {
 
   let color = v.color || DEFAULT_COLOR;
   const previewTitle = () => titleInput.value.trim() || "（无标题）";
-  let currentTimedDuration = 60;
+  let currentTimedDuration = 30;
 
   const readTimedDuration = (): number => {
     const st = parseTimeMinutes(startTime.value || "09:00");
@@ -179,9 +182,8 @@ export function openPopover(opts: PopoverOptions): void {
   const syncRows = () => {
     const allDay = allDayCheck.checked;
     timesRow.style.display = allDay ? "none" : "";
-    const showEndDate = allDay || endDate.value !== startDate.value;
-    endDate.style.display = showEndDate ? "" : "none";
-    dateSep.style.display = showEndDate ? "" : "none";
+    endDate.style.display = "";
+    dateSep.style.display = "";
   };
   syncRows();
   currentTimedDuration = readTimedDuration();
@@ -221,7 +223,7 @@ export function openPopover(opts: PopoverOptions): void {
     }
     if (!et) {
       const [h, m] = st.split(":").map(Number);
-      const total = Math.min(h * 60 + m + 60, 23 * 60 + 59);
+      const total = Math.min(h * 60 + m + 30, 23 * 60 + 59);
       et = `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
     }
     return {
@@ -240,6 +242,15 @@ export function openPopover(opts: PopoverOptions): void {
     const values = collect();
     closePopover(true);
     opts.onSave(values);
+  };
+  const cancel = () => {
+    const { onCancel, onClose } = opts;
+    closePopover(true);
+    if (onCancel) {
+      onCancel();
+    } else {
+      onClose?.();
+    }
   };
   titleInput.addEventListener("input", () => {
     opts.onTitleChange?.(previewTitle());
@@ -263,7 +274,7 @@ export function openPopover(opts: PopoverOptions): void {
     opts.onValuesChange?.(collect());
   });
   $<HTMLButtonElement>(".cb-pop-save").addEventListener("click", save);
-  $<HTMLButtonElement>(".cb-pop-cancel").addEventListener("click", () => closePopover());
+  $<HTMLButtonElement>(".cb-pop-cancel").addEventListener("click", cancel);
   deleteBtn.addEventListener("click", () => {
     closePopover(true);
     opts.onDelete?.();
@@ -272,7 +283,7 @@ export function openPopover(opts: PopoverOptions): void {
   const onKeydown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      closePopover();
+      cancel();
     }
     if (event.key === "Enter" && event.target === titleInput) {
       event.preventDefault();
@@ -282,7 +293,9 @@ export function openPopover(opts: PopoverOptions): void {
   el.addEventListener("keydown", onKeydown);
 
   const onOutsideMousedown = (event: MouseEvent) => {
-    if (!el.contains(event.target as Node)) {
+    const target = event.target as Node;
+    const isIgnored = opts.ignoreOutside?.some((node) => node.contains(target)) ?? false;
+    if (!el.contains(target) && !isIgnored) {
       closePopover();
     }
   };

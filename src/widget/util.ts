@@ -1,9 +1,9 @@
+import { fmtDate, isoWeekStart, parseDateFromTitle } from "../shared/date";
+
+export { fmtDate, isoWeekStart, parseDateFromTitle };
+
 export function pad2(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-export function fmtDate(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 export function fmtTime(d: Date): string {
@@ -134,62 +134,4 @@ export function textColorFor(hex: string): string {
   const b = parseInt(m.slice(4, 6), 16) / 255;
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   return lum > 0.55 ? "#1f2329" : "#fff";
-}
-
-export function isoWeekStart(year: number, week: number): Date {
-  const jan4 = new Date(year, 0, 4);
-  const jan4Day = jan4.getDay() || 7;
-  const monday = new Date(jan4);
-  monday.setDate(jan4.getDate() - jan4Day + 1 + (week - 1) * 7);
-  return monday;
-}
-
-function validDateOrNull(year: number, month: number, day: number): string | null {
-  const d = new Date(year, month - 1, day);
-  if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) {
-    return `${year}-${pad2(month)}-${pad2(day)}`;
-  }
-  return null;
-}
-
-export function parseDateFromTitle(title: string): string | null {
-  // 1. YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD
-  const sepMatch = title.match(/(?<!\d)(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?!\d)/);
-  if (sepMatch) {
-    const result = validDateOrNull(Number(sepMatch[1]), Number(sepMatch[2]), Number(sepMatch[3]));
-    if (result) {
-      return result;
-    }
-  }
-
-  // 2. YYYY年M月D日
-  const cnMatch = title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-  if (cnMatch) {
-    const result = validDateOrNull(Number(cnMatch[1]), Number(cnMatch[2]), Number(cnMatch[3]));
-    if (result) {
-      return result;
-    }
-  }
-
-  // 3. YYYYMMDD（紧凑日记格式）
-  const compactMatch = title.match(/(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)/);
-  if (compactMatch) {
-    const result = validDateOrNull(Number(compactMatch[1]), Number(compactMatch[2]), Number(compactMatch[3]));
-    if (result) {
-      return result;
-    }
-  }
-
-  // 4. YYYY-Www 或 YYYY-wWW
-  const weekMatch = title.match(/\b(\d{4})-[wW](\d{1,2})\b/);
-  if (weekMatch) {
-    const year = Number(weekMatch[1]);
-    const week = Number(weekMatch[2]);
-    if (week >= 1 && week <= 53) {
-      const d = isoWeekStart(year, week);
-      return fmtDate(d);
-    }
-  }
-
-  return null;
 }

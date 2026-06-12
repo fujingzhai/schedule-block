@@ -151,6 +151,16 @@ body {
   background: var(--cb-accent-soft);
 }
 
+.cb-icon-btn--active {
+  background: var(--cb-accent);
+  color: var(--cb-accent-on);
+}
+
+.cb-icon-btn--active:hover {
+  background: var(--cb-accent);
+  filter: brightness(1.06);
+}
+
 .cb-icon-btn svg {
   width: 17px;
   height: 17px;
@@ -231,7 +241,7 @@ body {
 
 /* 时间轴 */
 .cb-calendar.fc .fc-timegrid-slot {
-  height: 18px;
+  height: 24px;
   border-bottom: 0;
 }
 
@@ -249,12 +259,16 @@ body {
   color: var(--b3-theme-on-surface-light);
   padding: 0 6px 0 4px;
   position: relative;
-  top: -7px;
+  top: -10px;
 }
 
 .cb-calendar.fc .fc-timegrid-axis-cushion {
   top: 0;
   max-width: none;
+}
+
+.cb-calendar.fc .fc-timegrid-slots tr:first-child .fc-timegrid-slot-label-cushion {
+  top: 0;
 }
 
 /* 列头：周视图显示月/星期/日，日视图显示完整日期 */
@@ -273,18 +287,20 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 2px 0;
+  gap: 4px;
+  padding: 3px 0 4px;
 }
 
-.cb-dh-date {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--b3-theme-on-surface-light);
-  line-height: 1.1;
-  white-space: nowrap;
+.cb-dh-top,
+.cb-dh-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
 }
 
+.cb-dh-date,
 .cb-dh-lunar {
   font-size: 11px;
   font-weight: 500;
@@ -293,15 +309,19 @@ body {
   white-space: nowrap;
 }
 
+.cb-dh-lunar {
+  opacity: 0.85;
+}
+
 .cb-dh-main {
-  min-width: 44px;
-  height: 28px;
+  min-width: 38px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 0 8px;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--b3-theme-on-background);
   line-height: 1.2;
@@ -320,6 +340,157 @@ body {
   background: var(--cb-accent);
   color: var(--cb-accent-on);
   font-weight: 500;
+}
+
+.cb-weather-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--b3-theme-on-surface-light);
+  cursor: pointer;
+  opacity: 0.42;
+}
+
+.cb-weather-btn:hover,
+.cb-weather-btn--active {
+  background: var(--b3-list-hover);
+  color: var(--b3-theme-on-surface);
+  opacity: 1;
+}
+
+.cb-dh--today .cb-weather-btn--active {
+  color: var(--cb-accent);
+}
+
+.cb-weather-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cb-weather-picker {
+  position: fixed;
+  z-index: 1002;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid var(--b3-border-color);
+  border-radius: 10px;
+  background: var(--b3-theme-background);
+  box-shadow: var(--b3-dialog-shadow);
+}
+
+.cb-weather-option {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--b3-theme-on-surface);
+  cursor: pointer;
+}
+
+.cb-weather-option:hover {
+  background: var(--b3-list-hover);
+}
+
+.cb-weather-option--active {
+  background: var(--cb-accent);
+  color: var(--cb-accent-on);
+}
+
+.cb-weather-option svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cb-filter-picker {
+  position: fixed;
+  z-index: 1002;
+  display: grid;
+  grid-template-columns: repeat(6, 22px);
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--b3-border-color);
+  border-radius: 10px;
+  background: var(--b3-theme-background);
+  box-shadow: var(--b3-dialog-shadow);
+}
+
+.cb-filter-all {
+  grid-column: 1 / -1;
+  height: 24px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--b3-theme-on-surface);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.cb-filter-all:hover,
+.cb-filter-all--active {
+  background: var(--b3-list-hover);
+}
+
+.cb-filter-swatch {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.26;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.cb-filter-swatch--active {
+  opacity: 1;
+  outline-color: var(--b3-theme-on-surface);
+}
+
+.cb-filter-swatch:not(.cb-filter-swatch--active)::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 10px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--b3-theme-background);
+  transform: rotate(-38deg);
+}
+
+.cb-note-tooltip {
+  position: fixed;
+  z-index: 1003;
+  max-width: 280px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--b3-border-color);
+  border-radius: 8px;
+  background: var(--b3-theme-background);
+  color: var(--b3-theme-on-background);
+  box-shadow: var(--b3-dialog-shadow);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
 }
 
 /* 日程块 */
@@ -381,7 +552,6 @@ body {
   border-radius: 4px;
   padding: 1px 4px;
   box-shadow: 0 0 0 1px var(--b3-theme-background);
-  min-height: 16px;
 }
 
 .cb-calendar .fc-timegrid-event .fc-event-main {
@@ -398,6 +568,24 @@ body {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.25;
+}
+
+/* 短日程（高度不足时 FullCalendar 自动加 fc-timegrid-event-short）：时间＋标题单行显示，高度仍按真实时长 */
+.cb-calendar .fc-timegrid-event-short {
+  padding: 0 4px;
+}
+
+.cb-calendar .fc-timegrid-event-short .fc-event-main {
+  padding: 0 1px;
+}
+
+.cb-calendar .fc-timegrid-event-short .fc-event-time,
+.cb-calendar .fc-timegrid-event-short .fc-event-title {
+  font-size: 10px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cb-calendar .fc-timegrid-event.fc-event-mirror {
@@ -453,7 +641,7 @@ body {
 .cb-popover {
   position: fixed;
   z-index: 1000;
-  width: 312px;
+  width: 342px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -510,14 +698,17 @@ body {
 
 .cb-pop-dates,
 .cb-pop-times {
-  display: flex;
+  display: grid;
+  grid-template-columns: 112px 18px 112px;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .cb-popover input[type="date"],
 .cb-popover input[type="time"] {
+  box-sizing: border-box;
   border: none;
   border-radius: 6px;
   padding: 4px 6px;
@@ -526,6 +717,14 @@ body {
   font-family: inherit;
   font-size: 13px;
   outline: none;
+}
+
+.cb-popover input[type="date"] {
+  width: 112px;
+}
+
+.cb-popover input[type="time"] {
+  width: 112px;
 }
 
 .cb-popover input[type="date"]:hover,
@@ -537,6 +736,8 @@ body {
 .cb-time-sep {
   color: var(--b3-theme-on-surface-light);
   font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .cb-allday {
