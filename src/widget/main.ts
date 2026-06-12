@@ -1,4 +1,4 @@
-import { Calendar, DateSelectArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
+import { Calendar, DateSelectArg, EventApi, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
 import zhCnLocale from "@fullcalendar/core/locales/zh-cn";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin, { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
@@ -12,7 +12,7 @@ import {
   PopoverValues,
   valuesToRange
 } from "./popover";
-import { addMinutes, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr } from "./util";
+import { addMinutes, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr, lunarDateLabel } from "./util";
 import "./widget.css";
 
 type ViewKey = "day" | "week";
@@ -27,7 +27,10 @@ const VIEW_KEY: Record<string, ViewKey> = {
 
 const VIEW_ATTR = "custom-calendar-view";
 const DATE_ATTR = "custom-calendar-date";
+const DURATION_ATTR = "custom-calendar-default-duration";
 const DEFAULT_HEIGHT = "1030px";
+const DEFAULT_DURATION_MINUTES = 60;
+const DURATION_OPTIONS = [15, 30, 45, 60];
 const LAST_COLOR_KEY = "schedule-block-last-color";
 
 const store = new EventStore();
@@ -35,6 +38,8 @@ let calendar: Calendar;
 let blockId = "";
 let docId = "";
 let anchorDate = "";
+let persistedViewKey: ViewKey | "" = "";
+let defaultDurationMinutes = DEFAULT_DURATION_MINUTES;
 let suppressUntil = 0;
 let anchorEditor: { el: HTMLElement; dispose(): void } | null = null;
 
@@ -52,6 +57,43 @@ function rememberColor(color: string): void {
   } catch {
     // 忽略
   }
+}
+
+function parseDurationMinutes(value: string | null | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_DURATION_MINUTES;
+  }
+  return Math.min(Math.max(Math.round(parsed), 5), 480);
+}
+
+function durationLabel(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes} 分钟`;
+  }
+  if (minutes % 60 === 0) {
+    return `${minutes / 60} 小时`;
+  }
+  return `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`;
+}
+
+function durationToFullCalendar(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function applyEventColor(event: EventApi, color: string): void {
+  event.setProp("backgroundColor", color);
+  event.setProp("borderColor", "transparent");
+  event.setProp("textColor", textColorFor(color));
+}
+
+function applyValuesToEvent(event: EventApi, values: PopoverValues): void {
+  const range = valuesToRange(values);
+  event.setProp("title", values.title || "（无标题）");
+  applyEventColor(event, values.color);
+  event.setDates(range.start, range.end, { allDay: range.allDay });
 }
 
 function toFC(event: CalEvent): EventInput {
@@ -127,16 +169,32 @@ function onSelect(info: DateSelectArg): void {
     color: lastColor(),
     note: ""
   };
-  openPopover({
-    mode: "create",
-    anchor: { x: info.jsEvent?.clientX ?? window.innerWidth / 2, y: info.jsEvent?.clientY ?? window.innerHeight / 3 },
-    values,
-    onSave: async (v) => {
-      calendar.unselect();
-      rememberColor(v.color);
-      const range = valuesToRange(v);
+  calendar.unselect();
+  const draft = calendar.addEvent({
+    id: `draft-${Date.now().toString(36)}`,
+    title: "（无标题）",
+    start: info.start,
+    end: info.end,
+    allDay,
+    backgroundColor: values.color,
+    borderColor: "transparent",
+    textColor: textColorFor(values.color),
+    editable: false,
+    classNames: ["cb-event-draft"]
+  });
+  let draftSavedId = "";
+  let draftInteracted = false;
+  let latestDraftValues = values;
+  let draftSaveTimer = 0;
+  const persistDraft = async (v: PopoverValues, close = false) => {
+    draftInteracted = true;
+    latestDraftValues = v;
+    rememberColor(v.color);
+    const range = valuesToRange(v);
+    if (!draftSavedId) {
+      draftSavedId = newEventId();
       await store.add({
-        id: newEventId(),
+        id: draftSavedId,
         title: v.title,
         start: range.start,
         end: range.end,
@@ -145,10 +203,56 @@ function onSelect(info: DateSelectArg): void {
         note: v.note,
         docId: docId
       });
+    } else {
+      await store.update(draftSavedId, {
+        title: v.title,
+        start: range.start,
+        end: range.end,
+        allDay: range.allDay,
+        color: v.color,
+        note: v.note
+      });
+    }
+    if (close) {
+      draft?.remove();
       refresh();
+    }
+  };
+  const queueDraftSave = (v: PopoverValues) => {
+    draftInteracted = true;
+    latestDraftValues = v;
+    if (draft) {
+      applyValuesToEvent(draft, v);
+    }
+    window.clearTimeout(draftSaveTimer);
+    draftSaveTimer = window.setTimeout(() => {
+      persistDraft(latestDraftValues).catch(showError);
+    }, 500);
+  };
+  openPopover({
+    mode: "create",
+    anchor: { x: info.jsEvent?.clientX ?? window.innerWidth / 2, y: info.jsEvent?.clientY ?? window.innerHeight / 3 },
+    values,
+    onTitleChange: (title) => {
+      draft?.setProp("title", title);
+    },
+    onColorChange: (color) => {
+      if (draft) {
+        applyEventColor(draft, color);
+      }
+    },
+    onValuesChange: queueDraftSave,
+    onSave: async (v) => {
+      window.clearTimeout(draftSaveTimer);
+      await persistDraft(v, true).catch(showError);
     },
     onClose: () => {
-      calendar.unselect();
+      window.clearTimeout(draftSaveTimer);
+      if (draftInteracted) {
+        persistDraft(latestDraftValues, true).catch(showError);
+      } else {
+        draft?.remove();
+      }
       suppressUntil = Date.now() + 250;
     }
   });
@@ -162,7 +266,7 @@ function onDateClick(info: DateClickArg): void {
     calendar.select({ start: info.date, allDay: true });
     return;
   }
-  calendar.select(info.date, addMinutes(info.date, 60));
+  calendar.select(info.date, addMinutes(info.date, defaultDurationMinutes));
 }
 
 function onEventClick(info: EventClickArg): void {
@@ -171,6 +275,34 @@ function onEventClick(info: EventClickArg): void {
   if (!stored) {
     return;
   }
+  const oldColor = stored.color;
+  const oldTitle = stored.title;
+  let editInteracted = false;
+  let latestEditValues = eventToValues(stored);
+  let editSaveTimer = 0;
+  const persistEdit = async (v: PopoverValues) => {
+    editInteracted = true;
+    latestEditValues = v;
+    rememberColor(v.color);
+    const range = valuesToRange(v);
+    await store.update(stored.id, {
+      title: v.title,
+      start: range.start,
+      end: range.end,
+      allDay: range.allDay,
+      color: v.color,
+      note: v.note
+    });
+  };
+  const queueEditSave = (v: PopoverValues) => {
+    editInteracted = true;
+    latestEditValues = v;
+    applyValuesToEvent(info.event, v);
+    window.clearTimeout(editSaveTimer);
+    editSaveTimer = window.setTimeout(() => {
+      persistEdit(latestEditValues).catch(showError);
+    }, 500);
+  };
   openPopover({
     mode: "edit",
     anchor: {
@@ -178,23 +310,32 @@ function onEventClick(info: EventClickArg): void {
       y: info.jsEvent.clientY,
       rect: info.el.getBoundingClientRect()
     },
-    values: eventToValues(stored),
+    values: latestEditValues,
+    onTitleChange: (title) => {
+      info.event.setProp("title", title);
+    },
+    onColorChange: (color) => {
+      applyEventColor(info.event, color);
+    },
+    onValuesChange: queueEditSave,
     onSave: async (v) => {
-      rememberColor(v.color);
-      const range = valuesToRange(v);
-      await store.update(stored.id, {
-        title: v.title,
-        start: range.start,
-        end: range.end,
-        allDay: range.allDay,
-        color: v.color,
-        note: v.note
-      });
+      window.clearTimeout(editSaveTimer);
+      await persistEdit(v).catch(showError);
       refresh();
     },
     onDelete: async () => {
+      window.clearTimeout(editSaveTimer);
       await store.remove(stored.id);
       refresh();
+    },
+    onClose: () => {
+      window.clearTimeout(editSaveTimer);
+      if (editInteracted) {
+        persistEdit(latestEditValues).catch(showError);
+      } else {
+        info.event.setProp("title", oldTitle);
+        applyEventColor(info.event, oldColor);
+      }
     }
   });
 }
@@ -267,12 +408,15 @@ function parseWeekLabel(input: string): string | null {
   return label === `${year}-W${String(week).padStart(2, "0")}` ? fmtDate(start) : null;
 }
 
-async function setAnchorDate(nextDate: string): Promise<void> {
+async function saveBlockSettings(nextDate: string, nextDuration: number): Promise<void> {
   anchorDate = nextDate;
+  defaultDurationMinutes = parseDurationMinutes(String(nextDuration));
+  calendar.setOption("defaultTimedEventDuration", durationToFullCalendar(defaultDurationMinutes));
   if (blockId) {
     await setBlockAttrs(blockId, {
       [DATE_ATTR]: anchorDate,
-      [VIEW_ATTR]: currentViewKey()
+      [VIEW_ATTR]: currentViewKey(),
+      [DURATION_ATTR]: String(defaultDurationMinutes)
     });
   }
   calendar.gotoDate(anchorDate);
@@ -312,6 +456,10 @@ function editAnchorDate(anchor: HTMLElement): void {
   el.innerHTML = `
     <label class="cb-anchor-label">${view === "week" ? "绑定周" : "绑定日期"}</label>
     <input class="cb-anchor-input" type="${view === "week" ? "week" : "date"}">
+    <label class="cb-anchor-label">默认时长</label>
+    <select class="cb-duration-select">
+      ${DURATION_OPTIONS.map((m) => `<option value="${m}">${durationLabel(m)}</option>`).join("")}
+    </select>
     <div class="cb-anchor-actions">
       <button type="button" class="cb-anchor-cancel">取消</button>
       <button type="button" class="cb-anchor-save">保存</button>
@@ -320,9 +468,17 @@ function editAnchorDate(anchor: HTMLElement): void {
   document.body.appendChild(el);
 
   const input = el.querySelector(".cb-anchor-input") as HTMLInputElement;
+  const durationSelect = el.querySelector(".cb-duration-select") as HTMLSelectElement;
   const saveBtn = el.querySelector(".cb-anchor-save") as HTMLButtonElement;
   const cancelBtn = el.querySelector(".cb-anchor-cancel") as HTMLButtonElement;
   input.value = current;
+  if (!DURATION_OPTIONS.includes(defaultDurationMinutes)) {
+    const option = document.createElement("option");
+    option.value = String(defaultDurationMinutes);
+    option.textContent = durationLabel(defaultDurationMinutes);
+    durationSelect.appendChild(option);
+  }
+  durationSelect.value = String(defaultDurationMinutes);
 
   const save = async () => {
     const value = input.value.trim();
@@ -333,7 +489,7 @@ function editAnchorDate(anchor: HTMLElement): void {
       return;
     }
     try {
-      await setAnchorDate(nextDate);
+      await saveBlockSettings(nextDate, parseDurationMinutes(durationSelect.value));
       closeAnchorEditor();
     } catch (err) {
       showError(err);
@@ -426,7 +582,7 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
         startDate: fmtDate(base),
         startTime: fmtTime(base),
         endDate: fmtDate(base),
-        endTime: fmtTime(addMinutes(base, 60)),
+        endTime: fmtTime(addMinutes(base, defaultDurationMinutes)),
         color: lastColor(),
         note: ""
       },
@@ -466,14 +622,31 @@ function persistViewState(): void {
   if (!blockId) {
     return;
   }
+  const key = currentViewKey();
+  if (key === persistedViewKey) {
+    return;
+  }
   window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(() => {
     setBlockAttrs(blockId, {
-      [VIEW_ATTR]: currentViewKey()
-    }).catch(() => {
-      // 独立打开或离线时忽略
-    });
+      [VIEW_ATTR]: key
+    })
+      .then(() => {
+        persistedViewKey = key;
+      })
+      .catch(() => {
+        // 独立打开或离线时忽略
+      });
   }, 400);
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) {
+    return false;
+  }
+  const tag = el.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
 }
 
 /* ---------- 启动 ---------- */
@@ -511,6 +684,7 @@ async function boot(): Promise<void> {
       if (attrs[DATE_ATTR] && isValidDateStr(attrs[DATE_ATTR])) {
         date = attrs[DATE_ATTR];
       }
+      defaultDurationMinutes = parseDurationMinutes(attrs[DURATION_ATTR]);
 
       // 没有手动绑定时，才从文档标题推断日期/周。
       const docTitle = await getDocTitle(blockId);
@@ -525,6 +699,7 @@ async function boot(): Promise<void> {
   if (!VIEW_MAP[view]) {
     view = "week";
   }
+  persistedViewKey = view;
 
   // 锚定日期：优先用标题解析，否则用属性或今日
   anchorDate = date || fmtDate(new Date());
@@ -565,21 +740,22 @@ async function boot(): Promise<void> {
     scrollTimeReset: false,
     slotDuration: "00:30:00",
     snapDuration: "00:15:00",
-    defaultTimedEventDuration: "01:00",
+    defaultTimedEventDuration: durationToFullCalendar(defaultDurationMinutes),
     slotLabelFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
     eventTimeFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
     moreLinkText: (n) => `还有 ${n} 项`,
     dayHeaderContent: (arg) => {
       const dow = arg.date.toLocaleDateString("zh-CN", { weekday: "short" });
       const dateLabel = `${arg.date.getMonth() + 1}月${arg.date.getDate()}日`;
+      const lunarLabel = lunarDateLabel(arg.date);
       const todayClass = arg.isToday ? " cb-dh--today" : "";
       if (VIEW_KEY[arg.view.type] === "day") {
         return {
-          html: `<div class="cb-dh cb-dh--single${todayClass}"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-main">${dow}</span></div>`
+          html: `<div class="cb-dh cb-dh--single${todayClass}"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-main">${dow}</span><span class="cb-dh-lunar">${lunarLabel}</span></div>`
         };
       }
       return {
-        html: `<div class="cb-dh cb-dh--week${todayClass}"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-main">${dow}</span></div>`
+        html: `<div class="cb-dh cb-dh--week${todayClass}"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-main">${dow}</span><span class="cb-dh-lunar">${lunarLabel}</span></div>`
       };
     },
     events: (_info, success) => success(store.visibleEvents().map(toFC)),
@@ -595,6 +771,20 @@ async function boot(): Promise<void> {
   });
   calendar.render();
   syncToolbar(root);
+
+  document.addEventListener("keydown", (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.key.toLowerCase() !== "z" || isEditableTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    store.undo()
+      .then((ok) => {
+        if (ok) {
+          refresh();
+        }
+      })
+      .catch(showError);
+  });
 
   let isDirty = false;
   store.onRemoteChange = () => {

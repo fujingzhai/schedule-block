@@ -41,6 +41,73 @@ export function addMinutes(d: Date, minutes: number): Date {
   return new Date(d.getTime() + minutes * 60 * 1000);
 }
 
+/** b - a 的天数差（基于 YYYY-MM-DD 字符串） */
+export function diffDays(a: string, b: string): number {
+  return Math.round((parseDate(b).getTime() - parseDate(a).getTime()) / 86400000);
+}
+
+/** "HH:mm" → 当天分钟数；非法格式返回 null */
+export function parseTimeMinutes(t: string): number | null {
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) {
+    return null;
+  }
+  const total = Number(m[1]) * 60 + Number(m[2]);
+  return total >= 0 && total < 24 * 60 ? total : null;
+}
+
+/** 分钟数 → "HH:mm"，超出当天时收敛到 23:59 */
+export function minutesToTime(total: number): string {
+  const clamped = Math.min(Math.max(total, 0), 23 * 60 + 59);
+  return `${pad2(Math.floor(clamped / 60))}:${pad2(clamped % 60)}`;
+}
+
+const LUNAR_DAYS = [
+  "",
+  "初一",
+  "初二",
+  "初三",
+  "初四",
+  "初五",
+  "初六",
+  "初七",
+  "初八",
+  "初九",
+  "初十",
+  "十一",
+  "十二",
+  "十三",
+  "十四",
+  "十五",
+  "十六",
+  "十七",
+  "十八",
+  "十九",
+  "二十",
+  "廿一",
+  "廿二",
+  "廿三",
+  "廿四",
+  "廿五",
+  "廿六",
+  "廿七",
+  "廿八",
+  "廿九",
+  "三十"
+];
+
+export function lunarDateLabel(d: Date): string {
+  try {
+    const raw = new Intl.DateTimeFormat("zh-CN-u-ca-chinese", {
+      month: "long",
+      day: "numeric"
+    }).format(d);
+    return raw.replace(/(\d{1,2})日$/, (_match, day) => `${LUNAR_DAYS[Number(day)] || `${day}日`}`);
+  } catch {
+    return "";
+  }
+}
+
 
 
 export function getIsoWeek(d: Date): string {
@@ -77,20 +144,43 @@ export function isoWeekStart(year: number, week: number): Date {
   return monday;
 }
 
+function validDateOrNull(year: number, month: number, day: number): string | null {
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) {
+    return `${year}-${pad2(month)}-${pad2(day)}`;
+  }
+  return null;
+}
+
 export function parseDateFromTitle(title: string): string | null {
-  // 1. 匹配 YYYY-MM-DD
-  const dateMatch = title.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
-  if (dateMatch) {
-    const year = Number(dateMatch[1]);
-    const month = Number(dateMatch[2]);
-    const day = Number(dateMatch[3]);
-    const d = new Date(year, month - 1, day);
-    if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) {
-      return `${year}-${pad2(month)}-${pad2(day)}`;
+  // 1. YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD
+  const sepMatch = title.match(/(?<!\d)(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?!\d)/);
+  if (sepMatch) {
+    const result = validDateOrNull(Number(sepMatch[1]), Number(sepMatch[2]), Number(sepMatch[3]));
+    if (result) {
+      return result;
     }
   }
 
-  // 2. 匹配 YYYY-Www 或 YYYY-wWW
+  // 2. YYYY年M月D日
+  const cnMatch = title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (cnMatch) {
+    const result = validDateOrNull(Number(cnMatch[1]), Number(cnMatch[2]), Number(cnMatch[3]));
+    if (result) {
+      return result;
+    }
+  }
+
+  // 3. YYYYMMDD（紧凑日记格式）
+  const compactMatch = title.match(/(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)/);
+  if (compactMatch) {
+    const result = validDateOrNull(Number(compactMatch[1]), Number(compactMatch[2]), Number(compactMatch[3]));
+    if (result) {
+      return result;
+    }
+  }
+
+  // 4. YYYY-Www 或 YYYY-wWW
   const weekMatch = title.match(/\b(\d{4})-[wW](\d{1,2})\b/);
   if (weekMatch) {
     const year = Number(weekMatch[1]);

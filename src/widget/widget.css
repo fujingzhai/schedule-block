@@ -285,6 +285,14 @@ body {
   white-space: nowrap;
 }
 
+.cb-dh-lunar {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--b3-theme-on-surface-light);
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
 .cb-dh-main {
   min-width: 44px;
   height: 28px;
@@ -303,7 +311,8 @@ body {
   padding: 2px 0;
 }
 
-.cb-dh--today .cb-dh-date {
+.cb-dh--today .cb-dh-date,
+.cb-dh--today .cb-dh-lunar {
   color: var(--cb-accent);
 }
 
@@ -664,7 +673,8 @@ body {
   color: var(--b3-theme-on-background);
 }
 
-.cb-anchor-input {
+.cb-anchor-input,
+.cb-duration-select {
   width: 100%;
   border: 1px solid var(--b3-border-color);
   border-radius: 6px;
@@ -676,7 +686,8 @@ body {
   outline: none;
 }
 
-.cb-anchor-input:focus {
+.cb-anchor-input:focus,
+.cb-duration-select:focus {
   border-color: var(--cb-accent);
 }
 

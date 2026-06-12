@@ -1,4 +1,4 @@
-import { addDaysStr } from "./util";
+import { addDaysStr, diffDays, minutesToTime, parseTimeMinutes } from "./util";
 
 /** 谷歌日历风格的取色板 */
 export const PALETTE = [
@@ -6,12 +6,12 @@ export const PALETTE = [
   "#d50000", // 番茄红
   "#e67c73", // 火鹤红
   "#f4511e", // 橘子橙
+  "#f6bf26", // 香蕉黄
+  "#33b679", // 鼠尾草绿
+  "#0b8043", // 罗勒绿
   "#039be5", // 孔雀蓝
   "#3f51b5", // 蓝莓
   "#7986cb", // 薰衣草
-  "#33b679", // 鼠尾草绿
-  "#0b8043", // 罗勒绿
-  "#f6bf26", // 香蕉黄
   "#8e24aa" // 葡萄紫
 ];
 export const DEFAULT_COLOR = PALETTE[0];
@@ -40,6 +40,9 @@ export interface PopoverOptions {
   values: PopoverValues;
   onSave(values: PopoverValues): void;
   onDelete?(): void;
+  onTitleChange?(title: string): void;
+  onColorChange?(color: string): void;
+  onValuesChange?(values: PopoverValues): void;
   /** 任何方式关闭（保存、删除、取消、点击外部）都会回调 */
   onClose?(): void;
 }
@@ -130,6 +133,31 @@ export function openPopover(opts: PopoverOptions): void {
   }
 
   let color = v.color || DEFAULT_COLOR;
+  const previewTitle = () => titleInput.value.trim() || "（无标题）";
+  let currentTimedDuration = 60;
+
+  const readTimedDuration = (): number => {
+    const st = parseTimeMinutes(startTime.value || "09:00");
+    const et = parseTimeMinutes(endTime.value || "10:00");
+    if (st === null || et === null) {
+      return currentTimedDuration;
+    }
+    const days = Math.max(diffDays(startDate.value || v.startDate, endDate.value || startDate.value || v.startDate), 0);
+    const duration = days * 24 * 60 + et - st;
+    return duration > 0 ? duration : currentTimedDuration;
+  };
+
+  const shiftEndByDuration = () => {
+    const st = parseTimeMinutes(startTime.value || "09:00");
+    if (st === null) {
+      return;
+    }
+    const total = st + currentTimedDuration;
+    const dayOffset = Math.floor(total / (24 * 60));
+    endDate.value = addDaysStr(startDate.value || v.startDate, dayOffset);
+    endTime.value = minutesToTime(total % (24 * 60));
+  };
+
   const renderSwatches = () => {
     swatches.innerHTML = "";
     for (const c of PALETTE) {
@@ -139,6 +167,8 @@ export function openPopover(opts: PopoverOptions): void {
       dot.style.background = c;
       dot.addEventListener("click", () => {
         color = c;
+        opts.onColorChange?.(color);
+        opts.onValuesChange?.(collect());
         renderSwatches();
       });
       swatches.appendChild(dot);
@@ -154,6 +184,7 @@ export function openPopover(opts: PopoverOptions): void {
     dateSep.style.display = showEndDate ? "" : "none";
   };
   syncRows();
+  currentTimedDuration = readTimedDuration();
 
   allDayCheck.addEventListener("change", () => {
     if (allDayCheck.checked && endDate.value < startDate.value) {
@@ -161,14 +192,20 @@ export function openPopover(opts: PopoverOptions): void {
     }
     if (!allDayCheck.checked) {
       endDate.value = startDate.value;
+      currentTimedDuration = readTimedDuration();
     }
     syncRows();
+    opts.onValuesChange?.(collect());
   });
   startDate.addEventListener("change", () => {
     if (endDate.style.display === "none" || endDate.value < startDate.value) {
       endDate.value = startDate.value;
     }
+    if (!allDayCheck.checked) {
+      shiftEndByDuration();
+    }
     syncRows();
+    opts.onValuesChange?.(collect());
   });
 
   const collect = (): PopoverValues => {
@@ -204,6 +241,27 @@ export function openPopover(opts: PopoverOptions): void {
     closePopover(true);
     opts.onSave(values);
   };
+  titleInput.addEventListener("input", () => {
+    opts.onTitleChange?.(previewTitle());
+    opts.onValuesChange?.(collect());
+  });
+  noteInput.addEventListener("input", () => {
+    opts.onValuesChange?.(collect());
+  });
+  startTime.addEventListener("change", () => {
+    shiftEndByDuration();
+    syncRows();
+    opts.onValuesChange?.(collect());
+  });
+  endDate.addEventListener("change", () => {
+    currentTimedDuration = readTimedDuration();
+    syncRows();
+    opts.onValuesChange?.(collect());
+  });
+  endTime.addEventListener("change", () => {
+    currentTimedDuration = readTimedDuration();
+    opts.onValuesChange?.(collect());
+  });
   $<HTMLButtonElement>(".cb-pop-save").addEventListener("click", save);
   $<HTMLButtonElement>(".cb-pop-cancel").addEventListener("click", () => closePopover());
   deleteBtn.addEventListener("click", () => {
@@ -246,27 +304,69 @@ export function openPopover(opts: PopoverOptions): void {
 
 function position(el: HTMLElement, anchor: PopoverAnchor): void {
   const margin = 8;
+  const gap = 10;
   const { width, height } = el.getBoundingClientRect();
+  const bounds = visibleBounds(margin);
   let x: number;
   let y: number;
   if (anchor.rect) {
-    x = anchor.rect.right + 10;
-    y = anchor.rect.top;
-    if (x + width + margin > window.innerWidth) {
-      x = anchor.rect.left - width - 10;
+    x = anchor.rect.right + gap;
+    if (x + width > bounds.right) {
+      x = anchor.rect.left - width - gap;
     }
-    if (x < margin) {
-      x = Math.min(Math.max(anchor.rect.left, margin), window.innerWidth - width - margin);
-      y = anchor.rect.bottom + 8;
+    if (x < bounds.left) {
+      x = anchor.rect.left;
+    }
+    y = anchor.rect.top;
+    if (y + height > bounds.bottom && anchor.rect.top - height - gap >= bounds.top) {
+      y = anchor.rect.top - height - gap;
+    } else if (y + height > bounds.bottom) {
+      y = anchor.rect.bottom + gap;
     }
   } else {
-    x = anchor.x + 10;
-    y = anchor.y + 10;
+    x = anchor.x + gap;
+    y = anchor.y + gap;
+    if (x + width > bounds.right) {
+      x = anchor.x - width - gap;
+    }
+    if (y + height > bounds.bottom) {
+      y = anchor.y - height - gap;
+    }
   }
-  x = Math.min(Math.max(x, margin), Math.max(window.innerWidth - width - margin, margin));
-  y = Math.min(Math.max(y, margin), Math.max(window.innerHeight - height - margin, margin));
+  x = Math.min(Math.max(x, bounds.left), Math.max(bounds.right - width, bounds.left));
+  y = Math.min(Math.max(y, bounds.top), Math.max(bounds.bottom - height, bounds.top));
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
+}
+
+function visibleBounds(margin: number): { left: number; right: number; top: number; bottom: number } {
+  let top = margin;
+  let left = margin;
+  let right = window.innerWidth - margin;
+  let bottom = window.innerHeight - margin;
+  const frame = window.frameElement as HTMLElement | null;
+  try {
+    if (frame && window.parent) {
+      const rect = frame.getBoundingClientRect();
+      const parentWidth = window.parent.innerWidth;
+      const parentHeight = window.parent.innerHeight;
+      left = Math.max(margin, -rect.left + margin);
+      top = Math.max(margin, -rect.top + margin);
+      right = Math.min(window.innerWidth - margin, parentWidth - rect.left - margin);
+      bottom = Math.min(window.innerHeight - margin, parentHeight - rect.top - margin);
+    }
+  } catch {
+    // 跨窗口访问失败时退回 iframe 自身视口
+  }
+  if (right <= left) {
+    left = margin;
+    right = window.innerWidth - margin;
+  }
+  if (bottom <= top) {
+    top = margin;
+    bottom = window.innerHeight - margin;
+  }
+  return { left, right, top, bottom };
 }
 
 /** 展示口径（含当天）→ 存储口径（全天排他 end） */
