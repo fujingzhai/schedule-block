@@ -792,7 +792,12 @@ function anchorLabel(view: ViewKey): string {
   }
   if (view === "week") {
     const d = parseDate(anchorDate);
-    return getIsoWeek(d);
+    const iso = getIsoWeek(d);
+    const m = iso.match(/^(\d{4})-W(\d{2})$/);
+    if (m) {
+      return `${m[1]}年第${parseInt(m[2], 10)}周`;
+    }
+    return iso;
   }
   return anchorDate;
 }
@@ -809,7 +814,11 @@ function isShowingAnchor(view: ViewKey): boolean {
 }
 
 function parseWeekLabel(input: string): string | null {
-  const match = input.trim().match(/^(\d{4})-[wW](\d{1,2})$/);
+  const trimmed = input.trim();
+  let match = trimmed.match(/^(\d{4})-[wW](\d{1,2})$/);
+  if (!match) {
+    match = trimmed.match(/^(\d{4})年第(\d{1,2})周$/);
+  }
   if (!match) {
     return null;
   }
@@ -1173,12 +1182,21 @@ function editAnchorDate(anchor: HTMLElement): void {
   closeColorFilterPicker();
   const view = currentViewKey();
   const current = anchorLabel(view);
+
   const el = document.createElement("div");
   el.className = "cb-anchor-editor";
   el.setAttribute("role", "dialog");
+  
+  let inputHtml = "";
+  if (view === "week") {
+    inputHtml = `<input class="cb-anchor-input" type="text" placeholder="例如：2026年第24周">`;
+  } else {
+    inputHtml = `<input class="cb-anchor-input" type="date">`;
+  }
+
   el.innerHTML = `
     <label class="cb-anchor-label">${view === "week" ? "绑定周次" : "绑定日期"}</label>
-    <input class="cb-anchor-input" type="${view === "week" ? "week" : "date"}">
+    ${inputHtml}
     <label class="cb-anchor-label">默认事件时长</label>
     <select class="cb-duration-select">
       ${DURATION_OPTIONS.map((m) => `<option value="${m}">${durationLabel(m)}</option>`).join("")}
@@ -1201,7 +1219,33 @@ function editAnchorDate(anchor: HTMLElement): void {
   const colorList = el.querySelector(".cb-color-list") as HTMLElement;
   const colorAddBtn = el.querySelector(".cb-color-add") as HTMLButtonElement;
   setupColorManager(colorList, colorAddBtn);
+  
   input.value = current;
+
+  const focusInput = () => {
+    input.focus();
+    if (view === "week") {
+      const val = input.value.trim();
+      const m1 = val.match(/^(\d{4})年第(\d{1,2})周$/);
+      const m2 = val.match(/^(\d{4})-[wW](\d{2})$/);
+      if (m1) {
+        const weekStr = m1[2];
+        const start = val.indexOf(weekStr);
+        const end = start + weekStr.length;
+        input.setSelectionRange(start, end);
+      } else if (m2) {
+        const weekStr = m2[2];
+        const start = val.indexOf(weekStr);
+        const end = start + weekStr.length;
+        input.setSelectionRange(start, end);
+      } else {
+        input.select();
+      }
+    } else {
+      input.select();
+    }
+  };
+
   if (!DURATION_OPTIONS.includes(defaultDurationMinutes)) {
     const option = document.createElement("option");
     option.value = String(defaultDurationMinutes);
@@ -1214,8 +1258,8 @@ function editAnchorDate(anchor: HTMLElement): void {
     const value = input.value.trim();
     const nextDate = view === "week" ? parseWeekLabel(value) : (isValidDateStr(value) ? value : null);
     if (!nextDate) {
-      showError(new Error(view === "week" ? "周格式应为 YYYY-Www，例如 2026-W24" : "日期格式应为 YYYY-MM-DD，例如 2026-06-12"));
-      input.focus();
+      showError(new Error(view === "week" ? "周格式应为 2026年第24周 或 2026-W24" : "日期格式应为 YYYY-MM-DD，例如 2026-06-12"));
+      focusInput();
       return;
     }
     try {
@@ -1256,8 +1300,7 @@ function editAnchorDate(anchor: HTMLElement): void {
   };
   anchorEditor = { el, dispose };
   positionAnchorEditor(el, anchor);
-  input.focus();
-  input.select();
+  focusInput();
 }
 
 /* ---------- 工具栏 ---------- */
