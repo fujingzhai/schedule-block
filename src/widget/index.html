@@ -7,6 +7,12 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- iframe 首次点击时浏览器先转移焦点，可能打断 FullCalendar PointerDragging 的
+         mousedown→mouseup 序列，导致 dateClick/select 失效。在 pointerdown 阶段提前
+         focus iframe，确保后续 mouseup 能正常到达，不影响单击空白不新建的设计。 -->
+    <script>
+      document.addEventListener('pointerdown', function () { window.focus(); }, true);
+    </script>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

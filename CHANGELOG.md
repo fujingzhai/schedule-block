@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2 (2026-06-13)
+
+- 修复 iframe 焦点竞争导致日历空白区域点击无响应的问题：日程块以 iframe 挂件形式嵌入思源文档，浏览器在 iframe 未获焦点时，首次点击会先转移焦点、打断 FullCalendar PointerDragging 的 mousedown→mouseup 事件链，使 dateClick（双击新建）和 select（拖选新建）均失效；而 eventClick（点击已有日程）使用原生 click 事件，不受此影响。现在在 pointerdown 阶段提前 focus iframe，确保后续 mouseup 正常到达，不影响单击空白不新建的设计意图。
+
 ## 1.3.1 (2026-06-13)
 
 - 优化短日程时间显示逻辑：限制时间文本（`.cb-event-time`）在单行布局中不被压缩及换行，优先保证时间字样（如 `23:30-`、`23:15-23:30`等）完整显示，超出列宽时对事件标题进行省略截断。
