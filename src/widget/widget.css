@@ -397,9 +397,7 @@ body.cb-quickadd-mode {
   opacity: 1;
 }
 
-.cb-dh--today .cb-weather-btn--active {
-  color: var(--cb-accent);
-}
+
 
 .cb-weather-btn svg {
   width: 16px;
@@ -438,8 +436,8 @@ body.cb-quickadd-mode {
 }
 
 .cb-weather-option--active {
-  background: var(--cb-accent);
-  color: var(--cb-accent-on);
+  background: var(--b3-list-hover);
+  color: var(--b3-theme-on-surface);
 }
 
 .cb-weather-option svg {
