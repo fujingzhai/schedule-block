@@ -933,6 +933,114 @@ body.cb-quickadd-mode {
   filter: brightness(1.08);
 }
 
+/* ====== 齿轮设置里的颜色管理 ====== */
+.cb-anchor-divider {
+  height: 1px;
+  margin: 4px 0 2px;
+  background: var(--b3-border-color);
+}
+
+.cb-anchor-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--b3-theme-on-surface-light);
+}
+
+.cb-color-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 188px;
+  overflow-y: auto;
+}
+
+.cb-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  background: var(--b3-theme-surface);
+}
+
+.cb-color-row--dragging {
+  opacity: 0.45;
+}
+
+.cb-color-row--over {
+  outline: 1px dashed var(--cb-accent);
+  outline-offset: -1px;
+}
+
+.cb-color-grip {
+  cursor: grab;
+  color: var(--b3-theme-on-surface-light);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: -3px;
+  padding: 0 2px 0 0;
+  user-select: none;
+}
+
+.cb-color-input {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--b3-border-color);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cb-color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.cb-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+.cb-color-del {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b3-theme-on-surface);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cb-color-del:hover {
+  background: var(--b3-list-hover);
+  color: var(--b3-theme-error);
+}
+
+.cb-color-del:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cb-color-add {
+  height: 28px;
+  border: 1px dashed var(--b3-border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b3-theme-on-surface);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cb-color-add:hover {
+  background: var(--b3-list-hover);
+}
+
 /* ---------- 快捷记录入口 ---------- */
 .cb-quickadd-backdrop {
   position: fixed;

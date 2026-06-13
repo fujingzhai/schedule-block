@@ -9,12 +9,19 @@ import { WeatherKind, WeatherStore, WEATHER_LABELS } from "./weather";
 import { initThemeBridge } from "./theme";
 import {
   closePopover,
-  DEFAULT_COLOR,
   openPopover,
-  PALETTE,
   PopoverValues,
   valuesToRange
 } from "./popover";
+import {
+  DEFAULT_PALETTE,
+  defaultColor,
+  getPalette,
+  isValidColor,
+  loadPalette,
+  onPaletteRemoteChange,
+  savePalette
+} from "./palette";
 import { addMinutes, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr, lunarDateLabel } from "./util";
 import "./widget.css";
 
@@ -52,14 +59,21 @@ let weatherPicker: { el: HTMLElement; date: string; dispose(): void } | null = n
 let colorFilterPicker: { el: HTMLElement; dispose(): void } | null = null;
 let noteTooltip: HTMLElement | null = null;
 let noteTooltipDispose: (() => void) | null = null;
-const visibleColors = new Set<string>(PALETTE);
+const visibleColors = new Set<string>(getPalette());
+/** 齿轮设置里颜色管理列表的重渲染回调（设置弹窗打开时有效） */
+let colorManagerRerender: (() => void) | null = null;
 let toolbarCreatePopoverOpen = false;
 
 function lastColor(): string {
   try {
-    return localStorage.getItem(LAST_COLOR_KEY) || DEFAULT_COLOR;
+    const saved = localStorage.getItem(LAST_COLOR_KEY);
+    // 上次用色若已从取色板移除，回退到取色板首色
+    if (saved && getPalette().includes(saved)) {
+      return saved;
+    }
+    return defaultColor();
   } catch {
-    return DEFAULT_COLOR;
+    return defaultColor();
   }
 }
 
@@ -158,7 +172,8 @@ function toFC(event: CalEvent): EventInput {
 }
 
 function isColorFilterAll(): boolean {
-  return visibleColors.size === PALETTE.length;
+  const palette = getPalette();
+  return visibleColors.size === palette.length && palette.every((c) => visibleColors.has(c));
 }
 
 function visibleFilteredEvents(): CalEvent[] {
@@ -178,9 +193,21 @@ function syncColorFilterButton(root: HTMLElement): void {
 
 function selectAllColors(): void {
   visibleColors.clear();
-  for (const color of PALETTE) {
+  for (const color of getPalette()) {
     visibleColors.add(color);
   }
+}
+
+/** 取色板变动后：筛选重置为全部、同步筛选按钮与列表、刷新日历 */
+function applyPaletteChanged(): void {
+  selectAllColors();
+  const root = document.getElementById("app");
+  if (root) {
+    syncColorFilterButton(root);
+  }
+  syncColorFilterPicker();
+  colorManagerRerender?.();
+  refresh();
 }
 
 function eventToValues(event: CalEvent): PopoverValues {
@@ -605,8 +632,111 @@ function closeAnchorEditor(): void {
   }
   const { el, dispose } = anchorEditor;
   anchorEditor = null;
+  colorManagerRerender = null;
   dispose();
   el.remove();
+}
+
+/** 齿轮设置里的颜色管理：拖动排序、点击改色、删除、新增；改动即时落盘并同步各处 */
+function setupColorManager(listEl: HTMLElement, addBtn: HTMLButtonElement): void {
+  let dragFrom = -1;
+
+  const commit = (next: string[]): void => {
+    savePalette(next).catch(showError);
+    // savePalette 已同步更新内存顺序，这里立即按新顺序刷新各处
+    applyPaletteChanged();
+  };
+
+  const render = (): void => {
+    const colors = getPalette();
+    listEl.innerHTML = colors.map((c, i) => `
+      <div class="cb-color-row" draggable="true" data-index="${i}">
+        <span class="cb-color-grip" aria-hidden="true">⋮⋮</span>
+        <input type="color" class="cb-color-input" value="${c}" aria-label="第 ${i + 1} 个颜色">
+        <button type="button" class="cb-color-del" aria-label="删除颜色" title="删除颜色"${colors.length <= 1 ? " disabled" : ""}>×</button>
+      </div>
+    `).join("");
+
+    listEl.querySelectorAll<HTMLElement>(".cb-color-row").forEach((row) => {
+      const index = Number(row.dataset.index);
+      const colorInput = row.querySelector(".cb-color-input") as HTMLInputElement;
+      const delBtn = row.querySelector(".cb-color-del") as HTMLButtonElement;
+
+      colorInput.addEventListener("change", () => {
+        const val = colorInput.value.toLowerCase();
+        if (!isValidColor(val)) {
+          return;
+        }
+        const colors = getPalette();
+        if (colors.some((c, i) => i !== index && c === val)) {
+          showError(new Error("该颜色已存在"));
+          colorInput.value = colors[index];
+          return;
+        }
+        const next = colors.slice();
+        next[index] = val;
+        commit(next);
+      });
+
+      delBtn.addEventListener("click", () => {
+        const colors = getPalette();
+        if (colors.length <= 1) {
+          return;
+        }
+        const next = colors.slice();
+        next.splice(index, 1);
+        commit(next);
+      });
+
+      row.addEventListener("dragstart", (event) => {
+        dragFrom = index;
+        row.classList.add("cb-color-row--dragging");
+        event.dataTransfer?.setData("text/plain", String(index));
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+        }
+      });
+      row.addEventListener("dragend", () => {
+        dragFrom = -1;
+        listEl.querySelectorAll(".cb-color-row--over, .cb-color-row--dragging")
+          .forEach((r) => r.classList.remove("cb-color-row--over", "cb-color-row--dragging"));
+      });
+      row.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
+        if (dragFrom !== index) {
+          row.classList.add("cb-color-row--over");
+        }
+      });
+      row.addEventListener("dragleave", () => {
+        row.classList.remove("cb-color-row--over");
+      });
+      row.addEventListener("drop", (event) => {
+        event.preventDefault();
+        row.classList.remove("cb-color-row--over");
+        const to = index;
+        if (dragFrom < 0 || dragFrom === to) {
+          return;
+        }
+        const next = getPalette().slice();
+        const [moved] = next.splice(dragFrom, 1);
+        next.splice(to, 0, moved);
+        dragFrom = -1;
+        commit(next);
+      });
+    });
+  };
+
+  addBtn.addEventListener("click", () => {
+    const colors = getPalette();
+    const candidate = DEFAULT_PALETTE.find((c) => !colors.includes(c)) || "#888888";
+    commit([...colors, candidate]);
+  });
+
+  colorManagerRerender = render;
+  render();
 }
 
 function closeWeatherPicker(): void {
@@ -652,7 +782,7 @@ function openColorFilterPicker(anchor: HTMLElement): void {
   const el = document.createElement("div");
   el.className = "cb-filter-picker";
   el.setAttribute("role", "dialog");
-  el.innerHTML = `<button type="button" class="cb-filter-all" aria-label="显示全部颜色" title="显示全部颜色">全部</button>` + PALETTE.map((color) => {
+  el.innerHTML = `<button type="button" class="cb-filter-all" aria-label="显示全部颜色" title="显示全部颜色">全部</button>` + getPalette().map((color) => {
     const active = visibleColors.has(color) ? " cb-filter-swatch--active" : "";
     return `<button type="button" class="cb-filter-swatch${active}" data-color="${color}" style="background:${color}" aria-label="筛选颜色 ${color}" title="筛选颜色 ${color}"></button>`;
   }).join("");
@@ -841,6 +971,10 @@ function editAnchorDate(anchor: HTMLElement): void {
     <select class="cb-duration-select">
       ${DURATION_OPTIONS.map((m) => `<option value="${m}">${durationLabel(m)}</option>`).join("")}
     </select>
+    <div class="cb-anchor-divider"></div>
+    <label class="cb-anchor-label">颜色管理<span class="cb-anchor-hint">拖动排序 · 点击改色</span></label>
+    <div class="cb-color-list"></div>
+    <button type="button" class="cb-color-add" aria-label="添加颜色">＋ 添加颜色</button>
     <div class="cb-anchor-actions">
       <button type="button" class="cb-anchor-cancel">取消</button>
       <button type="button" class="cb-anchor-save">保存</button>
@@ -852,6 +986,9 @@ function editAnchorDate(anchor: HTMLElement): void {
   const durationSelect = el.querySelector(".cb-duration-select") as HTMLSelectElement;
   const saveBtn = el.querySelector(".cb-anchor-save") as HTMLButtonElement;
   const cancelBtn = el.querySelector(".cb-anchor-cancel") as HTMLButtonElement;
+  const colorList = el.querySelector(".cb-color-list") as HTMLElement;
+  const colorAddBtn = el.querySelector(".cb-color-add") as HTMLButtonElement;
+  setupColorManager(colorList, colorAddBtn);
   input.value = current;
   if (!DURATION_OPTIONS.includes(defaultDurationMinutes)) {
     const option = document.createElement("option");
@@ -1193,6 +1330,14 @@ async function boot(): Promise<void> {
   const root = document.getElementById("app")!;
   buildToolbar(root, view);
 
+  try {
+    await loadPalette();
+  } catch (err) {
+    console.warn("schedule-block: 取色板加载失败，使用默认取色板", err);
+  }
+  selectAllColors();
+  syncColorFilterButton(root);
+
   let storeReady = true;
   try {
     await store.load();
@@ -1294,6 +1439,7 @@ async function boot(): Promise<void> {
     }
   };
   weatherStore.onRemoteChange = refreshWeatherHeaders;
+  onPaletteRemoteChange(applyPaletteChanged);
 
   const resizeObserver = new ResizeObserver((entries) => {
     for (const entry of entries) {
@@ -1469,6 +1615,11 @@ async function saveScreenshotBlob(blob: Blob, fileName: string): Promise<void> {
 
 async function bootQuickAdd(): Promise<void> {
   initThemeBridge();
+  try {
+    await loadPalette();
+  } catch (err) {
+    console.warn("schedule-block: 取色板加载失败，使用默认取色板", err);
+  }
   try {
     await store.load();
   } catch (err) {

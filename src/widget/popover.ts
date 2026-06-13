@@ -1,20 +1,5 @@
 import { addDaysStr, diffDays, minutesToTime, parseTimeMinutes } from "./util";
-
-/** 谷歌日历风格的取色板 */
-export const PALETTE = [
-  "#616161", // 石墨灰
-  "#d50000", // 番茄红
-  "#e67c73", // 火鹤红
-  "#f4511e", // 橘子橙
-  "#f6bf26", // 香蕉黄
-  "#33b679", // 鼠尾草绿
-  "#0b8043", // 罗勒绿
-  "#039be5", // 孔雀蓝
-  "#3f51b5", // 蓝莓
-  "#7986cb", // 薰衣草
-  "#8e24aa" // 葡萄紫
-];
-export const DEFAULT_COLOR = PALETTE[0];
+import { defaultColor, getPalette } from "./palette";
 
 export interface PopoverValues {
   title: string;
@@ -135,7 +120,7 @@ export function openPopover(opts: PopoverOptions): void {
     deleteBtn.style.display = "none";
   }
 
-  let color = v.color || DEFAULT_COLOR;
+  let color = v.color || defaultColor();
   const previewTitle = () => titleInput.value.trim() || "（无标题）";
   let currentTimedDuration = 30;
 
@@ -163,7 +148,7 @@ export function openPopover(opts: PopoverOptions): void {
 
   const renderSwatches = () => {
     swatches.innerHTML = "";
-    for (const c of PALETTE) {
+    for (const c of getPalette()) {
       const dot = document.createElement("button");
       dot.type = "button";
       dot.className = "cb-swatch" + (c === color ? " cb-swatch--active" : "");
