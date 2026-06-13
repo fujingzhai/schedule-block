@@ -11,6 +11,7 @@ export interface PopoverValues {
   endTime: string;
   color: string;
   note: string;
+  isTodo: boolean;
 }
 
 export interface PopoverAnchor {
@@ -62,6 +63,10 @@ export function openPopover(opts: PopoverOptions): void {
   el.setAttribute("role", "dialog");
   el.innerHTML = `
     <input class="cb-pop-title" type="text" placeholder="添加日程" spellcheck="false">
+    <div class="cb-pop-row cb-pop-todo-row">
+      <svg class="cb-pop-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 0 0-7.6 16.5L3 20l1.4 1.4l1.5-1.5A10 10 0 1 0 12 2Zm0 2a8 8 0 1 1 0 16a8 8 0 0 1 0-16Zm1 3h-2v5.4l4.4 2.7l1-1.7l-3.4-2V7Z"/></svg>
+      <label class="cb-todo-option"><input class="cb-todo-check" type="checkbox">设为待办</label>
+    </div>
     <div class="cb-pop-row cb-pop-when">
       <svg class="cb-pop-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8a8 8 0 0 1-8 8Zm.5-13H11v6l5.2 3.1l.8-1.2l-4.5-2.7Z"/></svg>
       <div class="cb-pop-when-fields">
@@ -104,6 +109,7 @@ export function openPopover(opts: PopoverOptions): void {
   const startTime = $<HTMLInputElement>(".cb-start-time");
   const endTime = $<HTMLInputElement>(".cb-end-time");
   const allDayCheck = $<HTMLInputElement>(".cb-allday-check");
+  const todoCheck = $<HTMLInputElement>(".cb-todo-check");
   const swatches = $<HTMLElement>(".cb-swatches");
   const noteInput = $<HTMLTextAreaElement>(".cb-pop-note");
   const deleteBtn = $<HTMLButtonElement>(".cb-pop-delete");
@@ -115,6 +121,7 @@ export function openPopover(opts: PopoverOptions): void {
   startTime.value = v.startTime;
   endTime.value = v.endTime;
   allDayCheck.checked = v.allDay;
+  todoCheck.checked = v.isTodo;
   noteInput.value = v.note;
   if (!opts.onDelete) {
     deleteBtn.style.display = "none";
@@ -219,7 +226,8 @@ export function openPopover(opts: PopoverOptions): void {
       endDate: ed,
       endTime: et,
       color,
-      note: noteInput.value.trim()
+      note: noteInput.value.trim(),
+      isTodo: todoCheck.checked
     };
   };
 
@@ -242,6 +250,9 @@ export function openPopover(opts: PopoverOptions): void {
     opts.onValuesChange?.(collect());
   });
   noteInput.addEventListener("input", () => {
+    opts.onValuesChange?.(collect());
+  });
+  todoCheck.addEventListener("change", () => {
     opts.onValuesChange?.(collect());
   });
   startTime.addEventListener("change", () => {

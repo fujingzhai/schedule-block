@@ -575,6 +575,87 @@ body.cb-quickadd-mode {
   line-height: 1.25;
 }
 
+.cb-event-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.cb-event-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.cb-event-inner .cb-event-time,
+.cb-event-inner .cb-event-title,
+.cb-event-inner .cb-event-duration {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cb-event-duration {
+  font-size: 10px;
+  line-height: 1.15;
+  font-weight: 400;
+  opacity: 0.82;
+  white-space: nowrap;
+}
+
+.cb-event-duration[hidden] {
+  display: none;
+}
+
+.cb-event-check {
+  position: relative;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  margin: 1px 0 0;
+  padding: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.94;
+}
+
+.cb-event-check::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 4px;
+  height: 8px;
+  border: solid currentColor;
+  border-width: 0 1.8px 1.8px 0;
+  opacity: 0;
+  transform: rotate(45deg);
+}
+
+.cb-event-check[aria-pressed="true"]::after {
+  opacity: 1;
+}
+
+.cb-calendar .fc-event.cb-event--todo {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.46) 1px, transparent 1.2px);
+  background-size: 7px 7px;
+}
+
+.cb-calendar .fc-event.cb-event--todo-done .cb-event-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: currentColor;
+  opacity: 0.82;
+}
+
 /* 短日程（高度不足时 FullCalendar 自动加 fc-timegrid-event-short）：时间＋标题单行显示，高度仍按真实时长 */
 .cb-calendar .fc-timegrid-event-short {
   padding: 0 4px;
@@ -585,12 +666,39 @@ body.cb-quickadd-mode {
 }
 
 .cb-calendar .fc-timegrid-event-short .fc-event-time,
-.cb-calendar .fc-timegrid-event-short .fc-event-title {
+.cb-calendar .fc-timegrid-event-short .fc-event-title,
+.cb-calendar .fc-timegrid-event-short .fc-event-duration {
   font-size: 10px;
   line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cb-calendar .fc-timegrid-event-short .cb-event-duration {
+  display: none;
+}
+
+.cb-calendar .fc-timegrid-event-short .cb-event-inner {
+  align-items: center;
+}
+
+.cb-calendar .fc-timegrid-event-short .cb-event-body {
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+}
+
+.cb-calendar .fc-timegrid-event-short .cb-event-check {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  margin-top: 0;
+}
+
+.cb-calendar .fc-timegrid-event-short .cb-event-check::after {
+  left: 2px;
+  top: -1px;
 }
 
 .cb-calendar .fc-timegrid-event.fc-event-mirror {
@@ -756,6 +864,30 @@ body.cb-quickadd-mode {
 }
 
 .cb-allday input {
+  margin: 0;
+  accent-color: var(--cb-accent);
+}
+
+.cb-pop-todo-row {
+  align-items: center;
+}
+
+.cb-pop-todo-row .cb-pop-icon {
+  margin-top: 0;
+}
+
+.cb-todo-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  font-size: 13px;
+  color: var(--b3-theme-on-surface);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cb-todo-option input {
   margin: 0;
   accent-color: var(--cb-accent);
 }
@@ -1057,7 +1189,9 @@ body.cb-screenshot-capturing {
   overflow: visible;
 }
 
-body.cb-screenshot-capturing .cb-btn-screenshot,
+body.cb-screenshot-capturing .cb-toolbar-left,
+body.cb-screenshot-capturing .cb-toolbar-right,
+body.cb-screenshot-capturing .cb-nav,
 body.cb-screenshot-capturing .cb-filter-picker,
 body.cb-screenshot-capturing .cb-weather-picker,
 body.cb-screenshot-capturing .cb-popover,
@@ -1066,4 +1200,11 @@ body.cb-screenshot-capturing .cb-note-tooltip,
 body.cb-screenshot-capturing .fc-timegrid-now-indicator-line,
 body.cb-screenshot-capturing .fc-timegrid-now-indicator-arrow {
   visibility: hidden !important;
+}
+
+body.cb-screenshot-capturing .cb-btn-anchor {
+  border-color: transparent;
+  background: transparent;
+  color: var(--b3-theme-on-background);
+  cursor: default;
 }

@@ -1,4 +1,4 @@
-import { Calendar, DateSelectArg, EventApi, EventClickArg, EventDropArg, EventHoveringArg, EventInput } from "@fullcalendar/core";
+import { Calendar, DateSelectArg, EventApi, EventClickArg, EventContentArg, EventDropArg, EventHoveringArg, EventInput, EventMountArg } from "@fullcalendar/core";
 import zhCnLocale from "@fullcalendar/core/locales/zh-cn";
 import html2canvas from "html2canvas";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -109,6 +109,45 @@ function durationToFullCalendar(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+function eventDurationMinutes(event: EventApi): number {
+  if (event.allDay || !event.start || !event.end) {
+    return 0;
+  }
+  return Math.max(Math.round((event.end.getTime() - event.start.getTime()) / 60000), 0);
+}
+
+function compactClock(d: Date): string {
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function eventSegmentTimeText(arg: EventContentArg): string {
+  if (arg.event.allDay || !arg.event.start || !arg.event.end) {
+    return arg.timeText;
+  }
+  if (arg.isStart && arg.isEnd) {
+    return `${compactClock(arg.event.start)}-${compactClock(arg.event.end)}`;
+  }
+  if (arg.isStart) {
+    return `${compactClock(arg.event.start)}-`;
+  }
+  if (arg.isEnd) {
+    return `-${compactClock(arg.event.end)}`;
+  }
+  return "";
+}
+
+function durationBadge(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h && m) {
+    return `(${h}h${m}m)`;
+  }
+  if (h) {
+    return `(${h}h)`;
+  }
+  return `(${m}m)`;
+}
+
 function roundedCurrentDate(): Date {
   const date = new Date();
   date.setSeconds(0, 0);
@@ -156,9 +195,15 @@ function applyValuesToEvent(event: EventApi, values: PopoverValues): void {
   event.setProp("title", values.title || "（无标题）");
   applyEventColor(event, values.color);
   event.setDates(range.start, range.end, { allDay: range.allDay });
+  event.setExtendedProp("isTodo", values.isTodo);
+  if (!values.isTodo) {
+    event.setExtendedProp("done", false);
+  }
 }
 
 function toFC(event: CalEvent): EventInput {
+  const isTodo = Boolean(event.isTodo);
+  const done = Boolean(event.done);
   return {
     id: event.id,
     title: event.title,
@@ -167,8 +212,96 @@ function toFC(event: CalEvent): EventInput {
     allDay: event.allDay,
     backgroundColor: event.color,
     borderColor: "transparent",
-    textColor: textColorFor(event.color)
+    textColor: textColorFor(event.color),
+    extendedProps: {
+      isTodo,
+      done
+    }
   };
+}
+
+function eventClassNames(arg: { event: EventApi }): string[] {
+  const isTodo = Boolean(arg.event.extendedProps.isTodo);
+  const done = Boolean(arg.event.extendedProps.done);
+  if (!isTodo) {
+    return [];
+  }
+  return done ? ["cb-event--todo-done"] : ["cb-event--todo"];
+}
+
+function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
+  const isTodo = Boolean(arg.event.extendedProps.isTodo);
+  const done = Boolean(arg.event.extendedProps.done);
+  const wrap = document.createElement("div");
+  wrap.className = "cb-event-inner";
+
+  if (isTodo) {
+    const check = document.createElement("button");
+    check.type = "button";
+    check.className = "cb-event-check";
+    check.dataset.eventId = arg.event.id;
+    check.setAttribute("aria-label", done ? "标记为未完成" : "标记为已完成");
+    check.setAttribute("title", done ? "标记为未完成" : "标记为已完成");
+    check.setAttribute("aria-pressed", done ? "true" : "false");
+    wrap.appendChild(check);
+  }
+
+  const body = document.createElement("span");
+  body.className = "cb-event-body";
+  const timeText = eventSegmentTimeText(arg);
+  if (timeText) {
+    const time = document.createElement("span");
+    time.className = "cb-event-time";
+    time.textContent = timeText;
+    body.appendChild(time);
+  }
+  const title = document.createElement("span");
+  title.className = "cb-event-title";
+  title.textContent = arg.event.title || "（无标题）";
+  body.appendChild(title);
+  const minutes = eventDurationMinutes(arg.event);
+  if (minutes > 45) {
+    const duration = document.createElement("span");
+    duration.className = "cb-event-duration";
+    duration.textContent = durationBadge(minutes);
+    body.appendChild(duration);
+  }
+  wrap.appendChild(body);
+
+  return { domNodes: [wrap] };
+}
+
+function onEventDidMount(arg: EventMountArg): void {
+  scheduleAdjustEventDuration(arg.el);
+}
+
+function scheduleAdjustEventDuration(el: HTMLElement): void {
+  window.requestAnimationFrame(() => {
+    adjustEventDurationVisibility(el);
+  });
+}
+
+function adjustAllEventDurations(): void {
+  document.querySelectorAll<HTMLElement>(".cb-calendar .fc-event").forEach(adjustEventDurationVisibility);
+}
+
+function adjustEventDurationVisibility(el: HTMLElement): void {
+  const duration = el.querySelector<HTMLElement>(".cb-event-duration");
+  if (!duration) {
+    return;
+  }
+  duration.hidden = false;
+  const title = el.querySelector<HTMLElement>(".cb-event-title");
+  const body = el.querySelector<HTMLElement>(".cb-event-body");
+  const main = el.querySelector<HTMLElement>(".fc-event-main") || el;
+  if (!title || !body) {
+    duration.hidden = true;
+    return;
+  }
+  const lineHeight = parseFloat(getComputedStyle(title).lineHeight) || 14;
+  const titleWrapped = title.scrollHeight > lineHeight * 1.45;
+  const bodyOverflows = body.scrollHeight > body.clientHeight + 1 || main.scrollHeight > main.clientHeight + 1;
+  duration.hidden = titleWrapped || bodyOverflows || el.classList.contains("fc-timegrid-event-short");
 }
 
 function isColorFilterAll(): boolean {
@@ -221,7 +354,8 @@ function eventToValues(event: CalEvent): PopoverValues {
       endDate: lastDay >= event.start ? lastDay : event.start,
       endTime: "10:00",
       color: event.color,
-      note: event.note
+      note: event.note,
+      isTodo: Boolean(event.isTodo)
     };
   }
   const [sd, st] = event.start.split("T");
@@ -234,7 +368,8 @@ function eventToValues(event: CalEvent): PopoverValues {
     endDate: ed || sd,
     endTime: et || "10:00",
     color: event.color,
-    note: event.note
+    note: event.note,
+    isTodo: Boolean(event.isTodo)
   };
 }
 
@@ -250,6 +385,40 @@ function serializeRange(event: { start: Date | null; end: Date | null; allDay: b
 
 function refresh(): void {
   calendar.refetchEvents();
+  scheduleSyncCalendarScrollbars();
+}
+
+function scheduleSyncCalendarScrollbars(): void {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      syncCalendarScrollbars();
+      adjustAllEventDurations();
+    });
+  });
+}
+
+function syncCalendarScrollbars(): void {
+  const root = document.querySelector(".cb-calendar") as HTMLElement | null;
+  if (!root) {
+    return;
+  }
+  const bodyScroller = root.querySelector<HTMLElement>(".fc-scroller-liquid-absolute");
+  root.querySelectorAll<HTMLElement>(".fc-scroller").forEach((scroller) => {
+    if (scroller !== bodyScroller) {
+      scroller.style.overflowY = "hidden";
+    }
+  });
+  if (!bodyScroller) {
+    return;
+  }
+  const slots = root.querySelector<HTMLElement>(".fc-timegrid-slots");
+  const requiredHeight = slots?.scrollHeight || slots?.getBoundingClientRect().height || 0;
+  const availableHeight = bodyScroller.clientHeight;
+  const fitsFullDay = requiredHeight > 0 && availableHeight + 2 >= requiredHeight;
+  bodyScroller.style.overflowY = fitsFullDay ? "hidden" : "auto";
+  if (fitsFullDay) {
+    bodyScroller.scrollTop = 0;
+  }
 }
 
 function positionNoteTooltip(x: number, y: number): void {
@@ -303,6 +472,15 @@ function showEventNoteTooltip(info: EventHoveringArg): void {
   }
 }
 
+async function toggleTodoDone(id: string): Promise<void> {
+  const stored = store.get(id);
+  if (!stored || !stored.isTodo) {
+    return;
+  }
+  await store.update(id, { done: !Boolean(stored.done) });
+  refresh();
+}
+
 /* ---------- 交互回调 ---------- */
 
 function onSelect(info: DateSelectArg): void {
@@ -319,7 +497,8 @@ function onSelect(info: DateSelectArg): void {
     endDate: allDay ? addDaysStr(fmtDate(info.end), -1) : fmtDate(info.end),
     endTime: allDay ? "10:00" : fmtTime(info.end),
     color: lastColor(),
-    note: ""
+    note: "",
+    isTodo: false
   };
   calendar.unselect();
   const draft = calendar.addEvent({
@@ -353,7 +532,9 @@ function onSelect(info: DateSelectArg): void {
         allDay: range.allDay,
         color: v.color,
         note: v.note,
-        docId: docId
+        docId: docId,
+        isTodo: v.isTodo,
+        done: false
       });
     } else {
       await store.update(draftSavedId, {
@@ -362,7 +543,9 @@ function onSelect(info: DateSelectArg): void {
         end: range.end,
         allDay: range.allDay,
         color: v.color,
-        note: v.note
+        note: v.note,
+        isTodo: v.isTodo,
+        done: v.isTodo ? Boolean(store.get(draftSavedId)?.done) : false
       });
     }
     if (close) {
@@ -456,6 +639,9 @@ function onDateClick(info: DateClickArg): void {
 
 function onEventClick(info: EventClickArg): void {
   info.jsEvent.preventDefault();
+  if ((info.jsEvent.target as HTMLElement | null)?.closest(".cb-event-check")) {
+    return;
+  }
   hideEventNoteTooltip();
   const stored = store.get(info.event.id);
   if (!stored) {
@@ -476,7 +662,9 @@ function onEventClick(info: EventClickArg): void {
       end: range.end,
       allDay: range.allDay,
       color: v.color,
-      note: v.note
+      note: v.note,
+      isTodo: v.isTodo,
+      done: v.isTodo ? Boolean(stored.done) : false
     });
   };
   const queueEditSave = (v: PopoverValues) => {
@@ -532,7 +720,9 @@ function onEventClick(info: EventClickArg): void {
           end: original.end,
           allDay: original.allDay,
           color: original.color,
-          note: original.note
+          note: original.note,
+          isTodo: Boolean(original.isTodo),
+          done: Boolean(original.done)
         }).then(refresh).catch(showError);
       } else {
         info.event.setProp("title", original.title);
@@ -1060,7 +1250,8 @@ function defaultCreateValues(): PopoverValues {
     endDate: fmtDate(base),
     endTime: fmtTime(addMinutes(base, defaultDurationMinutes)),
     color: lastColor(),
-    note: ""
+    note: "",
+    isTodo: false
   };
 }
 
@@ -1092,7 +1283,9 @@ function openCreatePopover(opts: {
         allDay: range.allDay,
         color: v.color,
         note: v.note,
-        docId: opts.docId
+        docId: opts.docId,
+        isTodo: v.isTodo,
+        done: false
       });
     } else {
       await store.update(savedId, {
@@ -1101,7 +1294,9 @@ function openCreatePopover(opts: {
         end: range.end,
         allDay: range.allDay,
         color: v.color,
-        note: v.note
+        note: v.note,
+        isTodo: v.isTodo,
+        done: v.isTodo ? Boolean(store.get(savedId)?.done) : false
       });
     }
     if (close) {
@@ -1399,6 +1594,9 @@ async function boot(): Promise<void> {
       };
     },
     events: (_info, success) => success(visibleFilteredEvents().map(toFC)),
+    eventClassNames,
+    eventContent: renderEventContent,
+    eventDidMount: onEventDidMount,
     select: onSelect,
     dateClick: onDateClick,
     eventClick: onEventClick,
@@ -1409,10 +1607,12 @@ async function boot(): Promise<void> {
     datesSet: () => {
       syncToolbar(root);
       persistViewState();
+      scheduleSyncCalendarScrollbars();
     }
   });
   calendar.render();
   syncToolbar(root);
+  scheduleSyncCalendarScrollbars();
 
   document.addEventListener("keydown", (event) => {
     if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.key.toLowerCase() !== "z" || isEditableTarget(event.target)) {
@@ -1450,6 +1650,8 @@ async function boot(): Promise<void> {
           refresh();
         } else {
           calendar.updateSize();
+          scheduleSyncCalendarScrollbars();
+          adjustAllEventDurations();
         }
       }
     }
@@ -1458,6 +1660,16 @@ async function boot(): Promise<void> {
   if (calendarEl) {
     resizeObserver.observe(calendarEl);
     calendarEl.addEventListener("click", (ev) => {
+      const todoCheck = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".cb-event-check[data-event-id]");
+      if (todoCheck) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const id = todoCheck.dataset.eventId || "";
+        if (id) {
+          toggleTodoDone(id).catch(showError);
+        }
+        return;
+      }
       const btn = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".cb-weather-btn[data-date]");
       if (!btn) {
         return;
@@ -1591,11 +1803,21 @@ async function saveScreenshotBlob(blob: Blob, fileName: string): Promise<void> {
     try {
       handle = await picker(pickerOptions);
     } catch (err) {
+      if (isAbortError(err)) {
+        return;
+      }
       if (!(err instanceof TypeError)) {
         throw err;
       }
       const { startIn, ...fallbackOptions } = pickerOptions;
-      handle = await picker(fallbackOptions);
+      try {
+        handle = await picker(fallbackOptions);
+      } catch (fallbackErr) {
+        if (isAbortError(fallbackErr)) {
+          return;
+        }
+        throw fallbackErr;
+      }
     }
     const writable = await handle.createWritable();
     await writable.write(blob);
@@ -1611,6 +1833,10 @@ async function saveScreenshotBlob(blob: Blob, fileName: string): Promise<void> {
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
 }
 
 async function bootQuickAdd(): Promise<void> {

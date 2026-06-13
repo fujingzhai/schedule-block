@@ -12,6 +12,10 @@ export interface CalEvent {
   note: string;
   /** 所属文档的 root_id；空字符串表示未分配（旧数据兼容） */
   docId: string;
+  /** 是否作为待办事项显示；缺省为普通日程（旧数据兼容） */
+  isTodo?: boolean;
+  /** 待办是否已完成；仅 isTodo 为 true 时有效 */
+  done?: boolean;
 }
 
 const FILE = "/data/storage/schedule-block/events.json";
@@ -80,6 +84,12 @@ export class EventStore {
       for (const e of this.events) {
         if (e.docId === undefined || e.docId === null) {
           e.docId = "";
+        }
+        if (e.isTodo === undefined || e.isTodo === null) {
+          e.isTodo = false;
+        }
+        if (e.done === undefined || e.done === null) {
+          e.done = false;
         }
       }
       this.lastGoodText = text;
