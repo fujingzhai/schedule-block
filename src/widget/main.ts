@@ -298,10 +298,8 @@ function adjustEventDurationVisibility(el: HTMLElement): void {
     duration.hidden = true;
     return;
   }
-  const lineHeight = parseFloat(getComputedStyle(title).lineHeight) || 14;
-  const titleWrapped = title.scrollHeight > lineHeight * 1.45;
   const bodyOverflows = body.scrollHeight > body.clientHeight + 1 || main.scrollHeight > main.clientHeight + 1;
-  duration.hidden = titleWrapped || bodyOverflows || el.classList.contains("fc-timegrid-event-short");
+  duration.hidden = bodyOverflows || el.classList.contains("fc-timegrid-event-short");
 }
 
 function isColorFilterAll(): boolean {

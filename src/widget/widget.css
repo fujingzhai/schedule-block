@@ -591,7 +591,15 @@ body.cb-quickadd-mode {
   overflow: hidden;
 }
 
-.cb-event-inner .cb-event-time,
+.cb-event-inner .cb-event-time {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .cb-event-inner .cb-event-title,
 .cb-event-inner .cb-event-duration {
   display: block;
@@ -665,9 +673,9 @@ body.cb-quickadd-mode {
   padding: 0 1px;
 }
 
-.cb-calendar .fc-timegrid-event-short .fc-event-time,
-.cb-calendar .fc-timegrid-event-short .fc-event-title,
-.cb-calendar .fc-timegrid-event-short .fc-event-duration {
+.cb-calendar .fc-timegrid-event-short .cb-event-time,
+.cb-calendar .fc-timegrid-event-short .cb-event-title,
+.cb-calendar .fc-timegrid-event-short .cb-event-duration {
   font-size: 10px;
   line-height: 1.1;
   white-space: nowrap;
