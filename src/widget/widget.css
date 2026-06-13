@@ -6,6 +6,9 @@
   --cb-accent: #4b5563;
   --cb-accent-soft: rgba(75, 85, 99, 0.14);
   --cb-accent-on: #ffffff;
+  --cb-create-color: #d50000;
+  --cb-create-color-soft: rgba(213, 0, 0, 0.18);
+  --cb-create-color-on: #ffffff;
   --b3-theme-background: #ffffff;
   --b3-theme-surface: #f5f7fa;
   --b3-theme-error: #d23f31;
@@ -225,7 +228,7 @@ body.cb-quickadd-mode {
   --fc-neutral-bg-color: var(--b3-theme-surface);
   --fc-today-bg-color: rgba(128, 128, 128, 0.07);
   --fc-now-indicator-color: var(--cb-accent);
-  --fc-highlight-color: var(--cb-accent-soft);
+  --fc-highlight-color: var(--cb-create-color-soft);
   --fc-event-border-color: transparent;
   --fc-more-link-bg-color: transparent;
   --fc-more-link-text-color: var(--b3-theme-on-surface);
@@ -710,8 +713,15 @@ body.cb-quickadd-mode {
 }
 
 .cb-calendar .fc-timegrid-event.fc-event-mirror {
+  background-color: var(--cb-create-color);
+  border-color: transparent;
+  color: var(--cb-create-color-on);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
   opacity: 0.85;
+}
+
+.cb-calendar .fc-timegrid-event.fc-event-mirror .fc-event-main {
+  color: inherit;
 }
 
 .cb-calendar.fc .fc-timegrid-now-indicator-line {

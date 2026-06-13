@@ -77,12 +77,35 @@ function lastColor(): string {
   }
 }
 
+function colorSoft(color: string, alpha = 0.18): string {
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) {
+    return "rgba(75, 85, 99, 0.18)";
+  }
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function syncCreateColor(color = lastColor()): void {
+  document.documentElement.style.setProperty("--cb-create-color", color);
+  document.documentElement.style.setProperty("--cb-create-color-soft", colorSoft(color));
+  document.documentElement.style.setProperty("--cb-create-color-on", textColorFor(color));
+  if (calendar) {
+    calendar.setOption("eventBackgroundColor", color);
+    calendar.setOption("eventBorderColor", "transparent");
+    calendar.setOption("eventTextColor", textColorFor(color));
+  }
+}
+
 function rememberColor(color: string): void {
   try {
     localStorage.setItem(LAST_COLOR_KEY, color);
   } catch {
     // 忽略
   }
+  syncCreateColor(color);
 }
 
 function parseDurationMinutes(value: string | null | undefined): number {
@@ -332,6 +355,7 @@ function selectAllColors(): void {
 /** 取色板变动后：筛选重置为全部、同步筛选按钮与列表、刷新日历 */
 function applyPaletteChanged(): void {
   selectAllColors();
+  syncCreateColor();
   const root = document.getElementById("app");
   if (root) {
     syncColorFilterButton(root);
@@ -1528,6 +1552,7 @@ async function boot(): Promise<void> {
   } catch (err) {
     console.warn("schedule-block: 取色板加载失败，使用默认取色板", err);
   }
+  syncCreateColor();
   selectAllColors();
   syncColorFilterButton(root);
 
@@ -1572,6 +1597,9 @@ async function boot(): Promise<void> {
     // 槽高 24px / 30 分钟，12px 恰为 15 分钟：保证最短日程的显示高度与真实时长一致，不越界遮挡下一条
     eventMinHeight: 12,
     defaultTimedEventDuration: durationToFullCalendar(defaultDurationMinutes),
+    eventBackgroundColor: lastColor(),
+    eventBorderColor: "transparent",
+    eventTextColor: textColorFor(lastColor()),
     slotLabelFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
     eventTimeFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
     moreLinkText: (n) => `还有 ${n} 项`,
