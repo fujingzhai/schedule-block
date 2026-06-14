@@ -76,6 +76,7 @@ let toolbarCreatePopoverOpen = false;
 let panelMode = false;
 let panelCurrentAnchor = fmtDate(new Date());
 let lastClickedMoreLink: HTMLElement | null = null;
+let interactionPrimeRaf = 0;
 
 function lastColor(): string {
   try {
@@ -1921,6 +1922,47 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
 }
 
+function focusWidgetFrame(target: EventTarget | null): void {
+  try {
+    window.focus();
+  } catch {
+    // SiYuan/Chromium 某些宿主状态可能拒绝 focus；失败不应阻塞交互。
+  }
+  if (isEditableTarget(target)) {
+    return;
+  }
+  const active = document.activeElement;
+  if (active && active !== document.body && active !== document.documentElement) {
+    return;
+  }
+  const root = document.documentElement;
+  const previousTabIndex = root.getAttribute("tabindex");
+  root.setAttribute("tabindex", "-1");
+  try {
+    root.focus({ preventScroll: true });
+  } catch {
+    // 老内核不支持 focus options 时忽略。
+  }
+  if (previousTabIndex === null) {
+    root.removeAttribute("tabindex");
+  } else {
+    root.setAttribute("tabindex", previousTabIndex);
+  }
+}
+
+function primeCalendarInteraction(target: EventTarget | null = null): void {
+  focusWidgetFrame(target);
+  if (!calendar || interactionPrimeRaf) {
+    return;
+  }
+  interactionPrimeRaf = window.requestAnimationFrame(() => {
+    interactionPrimeRaf = 0;
+    calendar.updateSize();
+    scheduleSyncCalendarScrollbars();
+    adjustAllEventDurations();
+  });
+}
+
 /* ---------- 启动 ---------- */
 
 async function boot(): Promise<void> {
@@ -2192,6 +2234,12 @@ async function boot(): Promise<void> {
   const calendarEl = root.querySelector(".cb-calendar") as HTMLElement;
   if (calendarEl) {
     resizeObserver.observe(calendarEl);
+    const preflightInteraction = (ev: Event) => primeCalendarInteraction(ev.target);
+    calendarEl.addEventListener("pointerdown", preflightInteraction, true);
+    calendarEl.addEventListener("mousedown", preflightInteraction, true);
+    calendarEl.addEventListener("touchstart", preflightInteraction, { capture: true, passive: true });
+    calendarEl.addEventListener("pointerenter", preflightInteraction, { passive: true });
+    calendarEl.addEventListener("mouseenter", preflightInteraction, { passive: true });
     calendarEl.addEventListener("click", (ev) => {
       const dayNumber = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".fc-daygrid-day-number");
       if (panelMode && currentViewKey() === "month" && dayNumber) {
@@ -2250,6 +2298,9 @@ async function boot(): Promise<void> {
 
   document.addEventListener("visibilitychange", () => {
     syncPanelCurrentAnchor();
+    if (!document.hidden) {
+      primeCalendarInteraction();
+    }
     if (!document.hidden && isDirty) {
       isDirty = false;
       refresh();
@@ -2257,6 +2308,7 @@ async function boot(): Promise<void> {
   });
   window.addEventListener("focus", () => {
     syncPanelCurrentAnchor();
+    primeCalendarInteraction();
     if (isDirty) {
       isDirty = false;
       refresh();
