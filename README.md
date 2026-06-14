@@ -36,7 +36,7 @@ It is not a global calendar and it is not a replacement for database calendar vi
 
 ## Colors and Filtering
 
-- Events can be colored with an Apple system palette (the same green/blue/red/yellow/purple as Apple Calendar): harmonious, distinguishable even in month view, with dark text auto-applied on light colors for readability.
+- Events feature an Apple Calendar-style layout (with a soft translucent background tint and a solid left colored border bar) for a clean, modern aesthetic. Text and checkboxes automatically adapt to light/dark themes to ensure high contrast and excellent readability. In month views, events render as clean cards while hiding redundant internal marker lines.
 - The block's "color management" lets you drag to reorder, click to recolor, and add/remove colors; changes apply instantly and sync everywhere.
 - A toolbar filter button lets you choose which event colors are visible in the current schedule block.
 - The filter palette uses the same color order as the event editor.
