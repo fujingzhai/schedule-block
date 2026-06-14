@@ -932,15 +932,36 @@ body[data-mode="panel"] .cb-calendar .fc-event.cb-event--todo-done .cb-event-tit
 
 /* 事件块 */
 .cb-calendar .fc-event {
-  border: none;
-  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--cb-event-color) 12%, var(--b3-theme-background, #ffffff)) !important;
+  border-left: 3px solid var(--cb-event-color) !important;
+  border-top: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-radius: 4px !important;
+  color: color-mix(in srgb, var(--cb-event-color) 85%, #000000) !important;
   cursor: pointer;
-  transition: filter 0.1s;
+  transition: background-color 0.15s, filter 0.1s;
+}
+
+:root[data-theme-mode="dark"] .cb-calendar .fc-event {
+  background-color: color-mix(in srgb, var(--cb-event-color) 16%, var(--b3-theme-background, #1b1b1f)) !important;
+  color: color-mix(in srgb, var(--cb-event-color) 35%, #ffffff) !important;
 }
 
 .cb-calendar .fc-event:hover {
-  filter: brightness(0.94);
+  background-color: color-mix(in srgb, var(--cb-event-color) 20%, var(--b3-theme-background, #ffffff)) !important;
+  filter: none !important;
 }
+
+:root[data-theme-mode="dark"] .cb-calendar .fc-event:hover {
+  background-color: color-mix(in srgb, var(--cb-event-color) 25%, var(--b3-theme-background, #1b1b1f)) !important;
+}
+
+/* 在非面板模式（即文档挂件中），由于事件块自身已经带有左侧粗边框，因此隐藏内部冗余的 marker 条 */
+body:not([data-mode="panel"]) .cb-calendar.fc .cb-month-event-marker {
+  display: none !important;
+}
+
 
 .cb-calendar .fc-timegrid-event {
   border-radius: 4px;
