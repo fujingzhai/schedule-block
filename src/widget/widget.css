@@ -937,7 +937,7 @@ body[data-mode="panel"] .cb-calendar .fc-event.cb-event--todo-done .cb-event-tit
 
 /* 事件块 */
 .cb-calendar .fc-event {
-  background-color: color-mix(in srgb, var(--cb-event-color) 12%, var(--b3-theme-background, #ffffff)) !important;
+  background-color: var(--cb-event-bg-color) !important;
   border-left: 3px solid var(--cb-event-color) !important;
   border-top: none !important;
   border-right: none !important;
@@ -947,36 +947,19 @@ body[data-mode="panel"] .cb-calendar .fc-event.cb-event--todo-done .cb-event-tit
   transition: background-color 0.15s, filter 0.1s;
 }
 
-/* 统一在亮色主题下使用深色文本，暗色主题下使用浅色文本，确保在半透明背景上清晰易读，覆盖 FullCalendar 默认的自适应前景色 */
+/* 统一文本与组件的前景色，利用 JS 动态算出的标准颜色值，供 html2canvas 顺利解析 */
 .cb-calendar .fc-event,
 .cb-calendar .fc-event .cb-event-title,
 .cb-calendar .fc-event .cb-event-time,
 .cb-calendar .fc-event .cb-event-duration,
 .cb-calendar .fc-event .fc-event-main,
 .cb-calendar .fc-event .cb-event-check {
-  color: var(--b3-theme-on-background, #1f2329) !important;
-}
-
-:root[data-theme-mode="dark"] .cb-calendar .fc-event {
-  background-color: color-mix(in srgb, var(--cb-event-color) 16%, var(--b3-theme-background, #1b1b1f)) !important;
-}
-
-:root[data-theme-mode="dark"] .cb-calendar .fc-event,
-:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-title,
-:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-time,
-:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-duration,
-:root[data-theme-mode="dark"] .cb-calendar .fc-event .fc-event-main,
-:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-check {
-  color: var(--b3-theme-on-background, #ffffff) !important;
+  color: var(--cb-event-text-color) !important;
 }
 
 .cb-calendar .fc-event:hover {
-  background-color: color-mix(in srgb, var(--cb-event-color) 20%, var(--b3-theme-background, #ffffff)) !important;
+  background-color: var(--cb-event-hover-bg-color) !important;
   filter: none !important;
-}
-
-:root[data-theme-mode="dark"] .cb-calendar .fc-event:hover {
-  background-color: color-mix(in srgb, var(--cb-event-color) 25%, var(--b3-theme-background, #1b1b1f)) !important;
 }
 
 /* 在非面板模式（即文档挂件中），由于事件块自身已经带有左侧粗边框，因此隐藏内部冗余的 marker 条 */

@@ -23,7 +23,7 @@ import {
   onPaletteRemoteChange,
   savePalette
 } from "./palette";
-import { addMinutes, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr, lunarDateLabel } from "./util";
+import { addMinutes, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr, lunarDateLabel, mixColors } from "./util";
 import "./widget.css";
 
 type ViewKey = "day" | "week" | "month";
@@ -377,8 +377,23 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
 
 function onEventDidMount(arg: EventMountArg): void {
   const color = String(arg.event.backgroundColor || lastColor());
+  
+  const isDark = document.documentElement.getAttribute("data-theme-mode") === "dark";
+  const themeBgVar = getComputedStyle(document.documentElement).getPropertyValue("--b3-theme-background").trim();
+  const themeBg = themeBgVar || (isDark ? "#1b1b1f" : "#ffffff");
+  const themeOnBgVar = getComputedStyle(document.documentElement).getPropertyValue("--b3-theme-on-background").trim();
+  const themeOnBg = themeOnBgVar || (isDark ? "#ffffff" : "#1f2329");
+  
+  const bgWeight = isDark ? 0.16 : 0.12;
+  const hoverWeight = isDark ? 0.25 : 0.20;
+  const bgColor = mixColors(color, themeBg, bgWeight);
+  const hoverBgColor = mixColors(color, themeBg, hoverWeight);
+  
   arg.el.style.setProperty("--cb-event-color", color);
-  arg.el.style.setProperty("--cb-event-on-color", textColorFor(color));
+  arg.el.style.setProperty("--cb-event-bg-color", bgColor);
+  arg.el.style.setProperty("--cb-event-hover-bg-color", hoverBgColor);
+  arg.el.style.setProperty("--cb-event-text-color", themeOnBg);
+  
   scheduleAdjustEventDuration(arg.el);
 }
 

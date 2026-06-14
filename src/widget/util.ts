@@ -123,7 +123,6 @@ export function newEventId(): string {
   return `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** 根据背景色亮度决定文字用深色还是白色 */
 export function textColorFor(hex: string): string {
   const m = hex.replace("#", "");
   if (m.length !== 6) {
@@ -135,3 +134,44 @@ export function textColorFor(hex: string): string {
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   return lum > 0.55 ? "#1f2329" : "#fff";
 }
+
+/** 在 JS 中混合两种颜色，输出标准的 Hex 格式，供 html2canvas 正常解析 */
+export function mixColors(color1: string, color2: string, weight: number): string {
+  const parseHex = (hex: string) => {
+    const clean = hex.replace("#", "").trim();
+    if (clean.length === 3) {
+      return [
+        parseInt(clean[0] + clean[0], 16),
+        parseInt(clean[1] + clean[1], 16),
+        parseInt(clean[2] + clean[2], 16)
+      ];
+    }
+    return [
+      parseInt(clean.slice(0, 2), 16),
+      parseInt(clean.slice(2, 4), 16),
+      parseInt(clean.slice(4, 6), 16)
+    ];
+  };
+
+  const rgbMatch = (str: string) => {
+    const match = str.trim().toLowerCase().match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+      return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+    }
+    return null;
+  };
+
+  const c1 = rgbMatch(color1) || parseHex(color1);
+  const c2 = rgbMatch(color2) || parseHex(color2);
+
+  const r = Math.round(c1[0] * weight + c2[0] * (1 - weight));
+  const g = Math.round(c1[1] * weight + c2[1] * (1 - weight));
+  const b = Math.round(c1[2] * weight + c2[2] * (1 - weight));
+
+  const toHex = (n: number) => {
+    const clamped = Math.max(0, Math.min(255, n));
+    return clamped.toString(16).padStart(2, '0');
+  };
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
