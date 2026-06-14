@@ -1138,15 +1138,24 @@ body .fc-popover {
 
 body .fc-popover-header {
   background: var(--b3-theme-surface);
-  padding: 4px 8px;
+  padding: 6px 10px;
   flex: 0 0 auto;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
 }
 
 body .fc-popover-title {
-  display: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--b3-theme-on-background);
+  margin-right: 8px;
+}
+
+body .fc-popover-header > :last-child,
+body .fc-popover-header .fc-popover-close {
+  margin-left: auto;
+  cursor: pointer;
 }
 
 body .fc-popover-body {

@@ -399,66 +399,53 @@ function adjustMorePopover(): void {
   
   if (cell && body) {
     const cellRect = cell.getBoundingClientRect();
-    const spaceAbove = cellRect.top - margin;
     const headerHeight = 26; // Height of the cell's date/lunar header
-    const spaceBelow = window.innerHeight - (cellRect.top + headerHeight) - margin;
     
-    // Temporarily clear maxHeight to measure natural height of the popover
+    // 1. Measure popover non-body height (borders, padding, header)
     body.style.maxHeight = "9999px";
+    let _reflow = popover.offsetHeight;
+    let popoverRect = popover.getBoundingClientRect();
+    let bodyRect = body.getBoundingClientRect();
+    const nonBodyHeight = Math.max(0, popoverRect.height - bodyRect.height);
     
-    // Force layout reflow so the browser applies style changes before querying size
-    const _reflow = popover.offsetHeight;
-    const naturalHeight = popover.getBoundingClientRect().height;
-    const estimatedNonBody = 50; 
+    // 2. Enforce viewport containment on height
+    const maxPopoverHeight = window.innerHeight - 2 * margin;
+    const maxBodyHeight = maxPopoverHeight - nonBodyHeight;
+    body.style.maxHeight = `${Math.max(120, maxBodyHeight)}px`;
     
+    // Force layout reflow after setting height limit
+    _reflow = popover.offsetHeight;
+    popoverRect = popover.getBoundingClientRect();
+    
+    // 3. Position: default is below the cell's native header
     let desiredViewportTop = cellRect.top + headerHeight;
-    let popUpward = false;
     
-    // Only pop upward if the popover doesn't fit downward AND there is more space above
-    if (naturalHeight > spaceBelow) {
-      if (spaceAbove > spaceBelow) {
-        popUpward = true;
+    // Shift upward if it overflows the bottom
+    if (desiredViewportTop + popoverRect.height > window.innerHeight - margin) {
+      desiredViewportTop = window.innerHeight - popoverRect.height - margin;
+    }
+    
+    // Ensure it doesn't go above the top margin
+    if (desiredViewportTop < margin) {
+      desiredViewportTop = margin;
+    }
+    
+    // 4. Dynamically show/hide the popover title based on whether the cell's native header is covered
+    const titleEl = popover.querySelector<HTMLElement>(".fc-popover-title");
+    if (titleEl) {
+      if (desiredViewportTop < cellRect.top + headerHeight) {
+        titleEl.style.display = ""; // Show title (covers native header)
+      } else {
+        titleEl.style.display = "none"; // Hide title (native header is visible)
       }
     }
     
-    if (popUpward) {
-      // Pop upward: place popover above the cell's top edge
-      body.style.maxHeight = `${Math.max(120, spaceAbove - estimatedNonBody)}px`;
-      
-      // Force layout reflow so the browser applies style changes before querying size
-      const _reflow2 = popover.offsetHeight;
-      const rect = popover.getBoundingClientRect();
-      
-      desiredViewportTop = cellRect.top - rect.height;
-      if (desiredViewportTop < margin) {
-        desiredViewportTop = margin;
-      }
-      
-      const topDelta = desiredViewportTop - rect.top;
-      if (Math.abs(topDelta) > 0.5) {
-        const currentTop = Number.parseFloat(popover.style.top || "0");
-        const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
-        popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
-      }
-    } else {
-      // Pop downward: place popover below the cell's date header
-      body.style.maxHeight = `${Math.max(120, spaceBelow - estimatedNonBody)}px`;
-      
-      // Force layout reflow so the browser applies style changes before querying size
-      const _reflow2 = popover.offsetHeight;
-      const rect = popover.getBoundingClientRect();
-      
-      desiredViewportTop = cellRect.top + headerHeight;
-      if (desiredViewportTop + rect.height > window.innerHeight - margin) {
-        desiredViewportTop = Math.max(margin, window.innerHeight - rect.height - margin);
-      }
-      
-      const topDelta = desiredViewportTop - rect.top;
-      if (Math.abs(topDelta) > 0.5) {
-        const currentTop = Number.parseFloat(popover.style.top || "0");
-        const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
-        popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
-      }
+    // 5. Apply the calculated vertical position
+    const topDelta = desiredViewportTop - popoverRect.top;
+    if (Math.abs(topDelta) > 0.5) {
+      const currentTop = Number.parseFloat(popover.style.top || "0");
+      const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
+      popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
     }
   } else {
     // Fallback if cell or body is missing
