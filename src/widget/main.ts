@@ -2020,7 +2020,11 @@ async function boot(): Promise<void> {
     eventResizableFromStart: true,
     eventDurationEditable: true,
     dayMaxEvents: true,
-    moreLinkClick: "popover",
+    moreLinkClick: (info) => {
+      lastClickedMoreLink = (info.jsEvent.target as HTMLElement).closest<HTMLElement>(".fc-daygrid-more-link");
+      scheduleAdjustMorePopover();
+      return "popover";
+    },
     fixedWeekCount: false,
     allDaySlot: true,
     slotMinTime: "00:00:00",
@@ -2171,11 +2175,6 @@ async function boot(): Promise<void> {
           switchPanelView("day", parseDate(date));
           return;
         }
-      }
-      const moreLink = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".fc-daygrid-more-link");
-      if (moreLink) {
-        lastClickedMoreLink = moreLink;
-        scheduleAdjustMorePopover();
       }
       const todoCheck = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".cb-event-check[data-event-id]");
       if (todoCheck) {
