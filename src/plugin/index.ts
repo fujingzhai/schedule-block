@@ -1,7 +1,8 @@
-import { Dialog, Menu, Plugin, Protyle, fetchPost, getActiveEditor, getAllEditor, showMessage } from "siyuan";
+import { Dialog, Menu, Plugin, Protyle, fetchPost, getActiveEditor, getAllEditor, openTab, showMessage } from "siyuan";
 import { fmtDate, parseDateFromTitle } from "../shared/date";
 
 type ViewKey = "day" | "week";
+const PANEL_TAB = "schedulePanel";
 
 const BLOCK_LABEL: Record<ViewKey, string> = {
   day: "日历块",
@@ -55,6 +56,18 @@ export default class CalendarBlockPlugin extends Plugin {
       title: "日程块",
       position: "right",
       callback: (event) => this.openTopBarMenu(event)
+    });
+
+    // 独立日程面板：在标签页里放大显示同一套挂件（mode=panel）。
+    // 使用 SiYuan 的 flex 填充类，让 iframe 从确定高度的标签页取得高度，避免 height:100% 反馈膨胀。
+    this.addTab({
+      type: PANEL_TAB,
+      init() {
+        this.element.innerHTML = `<div class="fn__flex fn__flex-column fn__flex-1">
+          <iframe class="fn__flex-1" allowfullscreen src="/plugins/schedule-block/widget/index.html?mode=panel&view=month"
+            style="border:0;width:100%;min-height:0;display:block;background:transparent;"></iframe>
+        </div>`;
+      }
     });
 
     this.protyleSlash = VIEWS.map((view) => ({
@@ -134,6 +147,18 @@ export default class CalendarBlockPlugin extends Plugin {
     }
   }
 
+  private openPanel() {
+    openTab({
+      app: this.app,
+      custom: {
+        id: this.name + PANEL_TAB,
+        icon: "iconCalendarBlock",
+        title: "日程",
+        data: {}
+      }
+    });
+  }
+
   private openTopBarMenu(event: MouseEvent) {
     this.lastContext = getCurrentContext();
     const menu = new Menu("schedule-block-topbar");
@@ -148,6 +173,12 @@ export default class CalendarBlockPlugin extends Plugin {
         label: `插入${BLOCK_LABEL[view]}`,
         click: () => this.insertAtCursor(view, this.lastContext)
       });
+    });
+    menu.addSeparator();
+    menu.addItem({
+      icon: "iconCalendarBlock",
+      label: "打开日程面板",
+      click: () => this.openPanel()
     });
     const rect = this.menuAnchorRect(event);
     menu.open({

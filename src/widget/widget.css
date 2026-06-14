@@ -6,6 +6,8 @@
   --cb-accent: #4b5563;
   --cb-accent-soft: rgba(75, 85, 99, 0.14);
   --cb-accent-on: #ffffff;
+  --cb-panel-accent: #4b5563;
+  --cb-panel-accent-soft: rgba(75, 85, 99, 0.14);
   --cb-create-color: #d50000;
   --cb-create-color-soft: rgba(213, 0, 0, 0.18);
   --cb-create-color-on: #ffffff;
@@ -29,6 +31,18 @@
   --cb-accent: #9ca3af;
   --cb-accent-soft: rgba(156, 163, 175, 0.18);
   --cb-accent-on: #111827;
+  --cb-panel-accent: #9ca3af;
+  --cb-panel-accent-soft: rgba(156, 163, 175, 0.18);
+  /* 暗色兜底：宿主主题变量正常时会由 theme bridge 以行内样式覆盖（优先级更高）；
+     这里保证即使 bridge 未生效，暗色下前景/背景仍可读，当前时间指针也不会黑底黑线看不见 */
+  --b3-theme-background: #1b1b1f;
+  --b3-theme-surface: #26262b;
+  --b3-theme-on-background: #d4d7dd;
+  --b3-theme-on-surface: #a6abb3;
+  --b3-theme-on-surface-light: #6b7079;
+  --b3-border-color: #3a3a40;
+  --b3-list-hover: rgba(255, 255, 255, 0.08);
+  --b3-scroll-color: rgba(255, 255, 255, 0.2);
 }
 
 * {
@@ -58,6 +72,164 @@ body.cb-quickadd-mode {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* ====== 面板模式（独立标签页）：放大显示，靠标签页 flex 高度填满，内部由 FullCalendar 管理滚动 ====== */
+body[data-mode="panel"] {
+  padding: 0;
+}
+
+body[data-mode="panel"] #app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px 26px 20px;
+  box-sizing: border-box;
+}
+
+body[data-mode="panel"] .cb-toolbar {
+  padding: 4px 2px 12px;
+  gap: 16px;
+}
+
+body[data-mode="panel"] .cb-btn,
+body[data-mode="panel"] .cb-btn-anchor {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+body[data-mode="panel"] .cb-icon-btn,
+body[data-mode="panel"] .cb-nav {
+  width: 30px;
+  height: 30px;
+}
+
+body[data-mode="panel"] .cb-icon-btn svg,
+body[data-mode="panel"] .cb-nav svg {
+  width: 16px;
+  height: 16px;
+}
+
+body[data-mode="panel"] .cb-calendar {
+  padding: 0;
+}
+
+body[data-mode="panel"] .cb-calendar.fc {
+  font-size: 13px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-timegrid-slot {
+  height: 28px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-timegrid-slot-label-cushion,
+body[data-mode="panel"] .cb-calendar.fc .fc-timegrid-axis-cushion {
+  font-size: 11px;
+}
+
+body[data-mode="panel"] .cb-dh-date,
+body[data-mode="panel"] .cb-dh-lunar {
+  font-size: 12px;
+}
+
+body[data-mode="panel"] .cb-dh-main {
+  min-width: 42px;
+  height: 26px;
+  border-radius: 13px;
+  font-size: 15px;
+}
+
+body[data-mode="panel"] .cb-weather-btn {
+  width: 26px;
+  height: 26px;
+}
+
+body[data-mode="panel"] .cb-event-title,
+body[data-mode="panel"] .cb-event-time,
+body[data-mode="panel"] .cb-event-note,
+body[data-mode="panel"] .cb-event-duration {
+  font-size: 12.5px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-day-number {
+  cursor: pointer;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-day-number:hover {
+  background: var(--b3-list-hover);
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-dayGridMonth-view .fc-daygrid-day-frame {
+  min-height: 112px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-day-events {
+  margin-top: 2px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-event {
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-event .cb-event-inner {
+  min-height: 18px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-more-link {
+  color: var(--b3-theme-on-surface-light);
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 5px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-more-link:hover {
+  color: var(--b3-theme-on-background);
+  background: var(--b3-list-hover);
+}
+
+.cb-dh-month-weekday {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  color: var(--b3-theme-on-surface-light);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cb-panel-settings {
+  width: 248px;
+}
+
+.cb-panel-view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cb-panel-view-item {
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b3-theme-on-surface);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cb-panel-view-item:hover {
+  background: var(--b3-list-hover);
+  color: var(--b3-theme-on-background);
+}
+
+.cb-panel-view-item--active {
+  background: var(--cb-panel-accent-soft);
+  color: var(--cb-panel-accent);
+  font-weight: 600;
 }
 
 /* ====== 工具栏 ====== */
@@ -125,6 +297,14 @@ body.cb-quickadd-mode {
 .cb-btn-anchor:hover {
   background: var(--b3-list-hover);
   color: var(--b3-theme-on-background);
+}
+
+.cb-btn:focus,
+.cb-btn-anchor:focus,
+.cb-nav:focus,
+.cb-icon-btn:focus,
+.cb-panel-view-item:focus {
+  outline: none;
 }
 
 .cb-btn-anchor--active {
@@ -248,7 +428,7 @@ body.cb-quickadd-mode {
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: var(--b3-theme-surface);
   --fc-today-bg-color: rgba(128, 128, 128, 0.07);
-  --fc-now-indicator-color: var(--cb-accent);
+  --fc-now-indicator-color: var(--b3-theme-on-background);
   --fc-highlight-color: var(--cb-create-color-soft);
   --fc-event-border-color: transparent;
   --fc-more-link-bg-color: transparent;
@@ -256,7 +436,9 @@ body.cb-quickadd-mode {
   font-size: 12px;
 }
 
-.cb-calendar.fc .fc-day-today {
+/* :not(.fc-popover)：今天的「+N 项」弹窗也带 fc-day-today 类，
+   若不排除会被这条 !important 染成半透明灰底，露出底层格子内容 */
+.cb-calendar.fc .fc-day-today:not(.fc-popover) {
   background-color: rgba(128, 128, 128, 0.07) !important;
 }
 
@@ -370,7 +552,7 @@ body.cb-quickadd-mode {
 }
 
 .cb-dh--today .cb-dh-main {
-  background: rgba(128, 128, 128, 0.18);
+  background: transparent;
   color: var(--b3-theme-on-background);
   font-weight: 500;
 }
@@ -390,9 +572,15 @@ body.cb-quickadd-mode {
   opacity: 0.42;
 }
 
-.cb-weather-btn:hover,
-.cb-weather-btn--active {
+.cb-weather-btn:hover {
   background: var(--b3-list-hover);
+  color: var(--b3-theme-on-surface);
+  opacity: 1;
+}
+
+/* 已选天气：只提升清晰度，不加灰底（灰底仅用于弹窗里标识当前选项） */
+.cb-weather-btn--active {
+  background: transparent;
   color: var(--b3-theme-on-surface);
   opacity: 1;
 }
@@ -530,6 +718,13 @@ body.cb-quickadd-mode {
   padding-top: 3px;
 }
 
+/* 日/周视图「全天」行里 FullCalendar 仍渲染了一个空的日期数字 <a>，
+   带圆形尺寸与 hover 灰底，悬停时会冒出一个无意义的小圆点，这里整体隐藏 */
+.cb-calendar.fc .fc-timeGridDay-view .fc-daygrid-day-top,
+.cb-calendar.fc .fc-timeGridWeek-view .fc-daygrid-day-top {
+  display: none;
+}
+
 .cb-calendar.fc .fc-daygrid-day-number {
   display: flex;
   align-items: center;
@@ -542,9 +737,11 @@ body.cb-quickadd-mode {
   color: var(--b3-theme-on-background);
 }
 
-.cb-calendar.fc .fc-day-today .fc-daygrid-day-number {
-  background: var(--cb-accent);
-  color: var(--cb-accent-on);
+
+body[data-mode="panel"] .cb-calendar.fc .fc-dayGridMonth-view .fc-day-today .cb-month-day-solar {
+  background: rgba(128, 128, 128, 0.18);
+  color: var(--b3-theme-on-background);
+  font-weight: 600;
 }
 
 .cb-calendar.fc .fc-daygrid-day.fc-day-other .fc-daygrid-day-number {
@@ -565,6 +762,172 @@ body.cb-quickadd-mode {
 
 .cb-calendar.fc .fc-daygrid-day-events {
   margin-top: 1px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-event {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--b3-theme-on-background) !important;
+  line-height: 17px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-event:hover {
+  background: var(--b3-list-hover) !important;
+  filter: none;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-event .fc-event-main {
+  color: inherit !important;
+  min-width: 0;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-dayGridMonth-view .fc-daygrid-day-top {
+  padding: 3px 4px 1px;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-dayGridMonth-view .fc-daygrid-day-number {
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+body[data-mode="panel"] .cb-month-day-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+body[data-mode="panel"] .cb-month-day-solar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 11px;
+  color: var(--b3-theme-on-background);
+}
+
+body[data-mode="panel"] .cb-month-day-lunar {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--b3-theme-on-surface-light);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-mode="panel"] .cb-calendar.fc .fc-day-other .cb-month-day-solar,
+body[data-mode="panel"] .cb-calendar.fc .fc-day-other .cb-month-day-lunar {
+  color: var(--b3-theme-on-surface-light);
+  opacity: 0.68;
+}
+
+/* 月视图：日期之后跟一个淡淡的天气图标，留出呼吸间距 */
+.cb-month-weather {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  color: var(--b3-theme-on-surface-light);
+  opacity: 0.75;
+}
+
+.cb-month-weather svg {
+  width: 13px;
+  height: 13px;
+}
+
+body[data-mode="panel"] .cb-month-weather svg {
+  width: 14px;
+  height: 14px;
+}
+
+body[data-mode="panel"] .cb-month-event-inner {
+  display: grid;
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 17px;
+  width: 100%;
+  min-width: 0;
+}
+
+body[data-mode="panel"] .cb-month-event-marker {
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+}
+
+body[data-mode="panel"] .cb-month-event-inner--todo {
+  grid-template-columns: 3px 13px minmax(0, 1fr) auto;
+}
+
+body[data-mode="panel"] .cb-month-event-inner .cb-event-time {
+  grid-column: 3;
+  color: var(--b3-theme-on-surface-light);
+  font-size: 11px;
+  line-height: 17px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+body[data-mode="panel"] .cb-month-event-inner .cb-event-title {
+  grid-column: 2;
+  color: var(--b3-theme-on-background);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-mode="panel"] .cb-month-event-inner--todo .cb-event-title {
+  grid-column: 3;
+}
+
+body[data-mode="panel"] .cb-month-event-inner--todo .cb-event-time {
+  grid-column: 4;
+}
+
+body[data-mode="panel"] .cb-month-event-inner .cb-event-duration {
+  display: none;
+}
+
+/* 复选框颜色跟事件标题一致（与日/周视图行为统一），而非跟随色块颜色；
+   高度调整为 11px 并与事件标题垂直居中对齐 */
+body[data-mode="panel"] .cb-month-event-inner .cb-event-check {
+  grid-column: 2;
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  align-self: center;
+  border-color: var(--b3-theme-on-background);
+  background: transparent;
+  color: var(--b3-theme-on-background);
+}
+
+body[data-mode="panel"] .cb-month-event-inner .cb-event-check::after {
+  left: 2px;
+  top: -1px;
+}
+
+/* 仅月视图事件是透明点状样式，白点底纹放上去会发虚，故只在月视图关闭；
+   日/周视图事件是实色块，保留待办白点底纹（完成后由 cb-event--todo-done 去掉） */
+body[data-mode="panel"] .fc-dayGridMonth-view .fc-event.cb-event--todo {
+  background-image: none;
+}
+
+body[data-mode="panel"] .cb-calendar .fc-event.cb-event--todo-done .cb-event-title {
+  color: var(--b3-theme-on-surface-light);
 }
 
 /* 事件块 */
@@ -747,31 +1110,70 @@ body.cb-quickadd-mode {
   color: inherit;
 }
 
+/* 当前时间指针用主题前景色（亮色主题近黑、暗色主题近白），
+   随主题自适应保证可见；几乎不会有人拿黑/白当事件色，避免与取色板冲突 */
 .cb-calendar.fc .fc-timegrid-now-indicator-line {
+  border-color: var(--b3-theme-on-background);
   border-width: 2px 0 0;
 }
 
 .cb-calendar.fc .fc-timegrid-now-indicator-arrow {
   border-width: 5px 0 5px 6px;
+  border-left-color: var(--b3-theme-on-background);
   border-top-color: transparent;
   border-bottom-color: transparent;
 }
 
 /* "+n more" 弹层与全天行 */
-.cb-calendar.fc .fc-popover {
+body .fc-popover {
   background: var(--b3-theme-background);
   border: 1px solid var(--b3-border-color);
   border-radius: 8px;
   box-shadow: var(--b3-dialog-shadow);
+  max-height: min(70vh, 430px);
+  display: flex;
+  flex-direction: column;
 }
 
-.cb-calendar.fc .fc-popover-header {
+body .fc-popover-header {
   background: var(--b3-theme-surface);
   padding: 4px 8px;
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+body .fc-popover-title {
+  display: none;
+}
+
+body .fc-popover-body {
+  overflow: auto;
+  min-height: 0;
+  max-height: min(58vh, 360px);
 }
 
 .cb-calendar.fc .fc-timegrid-axis-frame {
   justify-content: flex-end;
+}
+
+.cb-calendar.fc .fc-timegrid-divider {
+  padding: 0;
+}
+
+.cb-calendar.fc .fc-timegrid-axis-chunk,
+.cb-calendar.fc .fc-timegrid-axis-cushion {
+  min-height: 0;
+}
+
+.cb-calendar.fc .fc-timegrid .fc-daygrid-body-natural .fc-daygrid-day-events {
+  min-height: 18px;
+  margin-bottom: 0;
+}
+
+.cb-calendar.fc .fc-timegrid .fc-daygrid-day-frame {
+  min-height: 24px;
 }
 
 /* 滚动条 */
@@ -1148,13 +1550,19 @@ body.cb-quickadd-mode {
 }
 
 .cb-color-grip {
-  cursor: grab;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  flex: 0 0 auto;
   color: var(--b3-theme-on-surface-light);
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: -3px;
-  padding: 0 2px 0 0;
+  cursor: grab;
   user-select: none;
+}
+
+.cb-color-grip svg {
+  width: 9px;
+  height: 15px;
 }
 
 .cb-color-input {

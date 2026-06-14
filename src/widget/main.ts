@@ -2,6 +2,7 @@ import { Calendar, DateSelectArg, EventApi, EventClickArg, EventContentArg, Even
 import zhCnLocale from "@fullcalendar/core/locales/zh-cn";
 import html2canvas from "html2canvas";
 import timeGridPlugin from "@fullcalendar/timegrid";
+import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import { getBlockAttrs, setBlockAttrs, getDocTitle, getRootId } from "./api";
 import { CalEvent, EventStore } from "./store";
@@ -25,14 +26,22 @@ import {
 import { addMinutes, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr, lunarDateLabel } from "./util";
 import "./widget.css";
 
-type ViewKey = "day" | "week";
+type ViewKey = "day" | "week" | "month";
 const VIEW_MAP: Record<ViewKey, string> = {
   day: "timeGridDay",
-  week: "timeGridWeek"
+  week: "timeGridWeek",
+  month: "dayGridMonth"
 };
 const VIEW_KEY: Record<string, ViewKey> = {
   timeGridDay: "day",
-  timeGridWeek: "week"
+  timeGridWeek: "week",
+  dayGridMonth: "month"
+};
+const PANEL_VIEWS: ViewKey[] = ["day", "week", "month"];
+const PANEL_VIEW_LABELS: Record<ViewKey, string> = {
+  day: "日视图",
+  week: "周视图",
+  month: "月视图"
 };
 
 const VIEW_ATTR = "custom-calendar-view";
@@ -43,6 +52,7 @@ const DEFAULT_HEIGHT = "1330px";
 const DEFAULT_DURATION_MINUTES = 30;
 const DURATION_OPTIONS = [15, 30, 45, 60];
 const LAST_COLOR_KEY = "schedule-block-last-color";
+const PANEL_DURATION_KEY = "schedule-block-panel-default-duration";
 const SNAP_MINUTES = 15;
 
 const store = new EventStore();
@@ -63,6 +73,9 @@ const visibleColors = new Set<string>(getPalette());
 /** 齿轮设置里颜色管理列表的重渲染回调（设置弹窗打开时有效） */
 let colorManagerRerender: (() => void) | null = null;
 let toolbarCreatePopoverOpen = false;
+let panelMode = false;
+let panelCurrentAnchor = fmtDate(new Date());
+let lastClickedMoreLink: HTMLElement | null = null;
 
 function lastColor(): string {
   try {
@@ -132,6 +145,28 @@ function durationToFullCalendar(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+function normalizeDurationOption(minutes: number): number {
+  return DURATION_OPTIONS.includes(minutes) ? minutes : DEFAULT_DURATION_MINUTES;
+}
+
+function loadPanelDefaultDuration(): number {
+  try {
+    return normalizeDurationOption(parseDurationMinutes(localStorage.getItem(PANEL_DURATION_KEY)));
+  } catch {
+    return DEFAULT_DURATION_MINUTES;
+  }
+}
+
+function savePanelDefaultDuration(minutes: number): void {
+  defaultDurationMinutes = normalizeDurationOption(parseDurationMinutes(String(minutes)));
+  try {
+    localStorage.setItem(PANEL_DURATION_KEY, String(defaultDurationMinutes));
+  } catch {
+    // 忽略
+  }
+  calendar.setOption("defaultTimedEventDuration", durationToFullCalendar(defaultDurationMinutes));
+}
+
 function eventDurationMinutes(event: EventApi): number {
   if (event.allDay || !event.start || !event.end) {
     return 0;
@@ -157,6 +192,17 @@ function eventSegmentTimeText(arg: EventContentArg): string {
     return `-${compactClock(arg.event.end)}`;
   }
   return "";
+}
+
+function monthLunarLabel(d: Date): string {
+  const label = lunarDateLabel(d);
+  if (!label) {
+    return "";
+  }
+  if (label.endsWith("初一")) {
+    return label.slice(0, -2);
+  }
+  return label.replace(/^.*月/, "");
 }
 
 function durationBadge(minutes: number): string {
@@ -258,6 +304,41 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
   const wrap = document.createElement("div");
   wrap.className = "cb-event-inner";
 
+  if (currentViewKey() === "month") {
+    wrap.classList.add("cb-month-event-inner");
+    if (isTodo) {
+      wrap.classList.add("cb-month-event-inner--todo");
+    }
+    const marker = document.createElement("span");
+    marker.className = "cb-month-event-marker";
+    marker.style.backgroundColor = String(arg.event.backgroundColor || lastColor());
+    wrap.appendChild(marker);
+
+    if (isTodo) {
+      const check = document.createElement("button");
+      check.type = "button";
+      check.className = "cb-event-check";
+      check.dataset.eventId = arg.event.id;
+      check.setAttribute("aria-label", done ? "标记为未完成" : "标记为已完成");
+      check.setAttribute("title", done ? "标记为未完成" : "标记为已完成");
+      check.setAttribute("aria-pressed", done ? "true" : "false");
+      wrap.appendChild(check);
+    }
+
+    const title = document.createElement("span");
+    title.className = "cb-event-title";
+    title.textContent = arg.event.title || "（无标题）";
+    wrap.appendChild(title);
+
+    if (arg.event.start && !arg.event.allDay) {
+      const time = document.createElement("span");
+      time.className = "cb-event-time";
+      time.textContent = compactClock(arg.event.start);
+      wrap.appendChild(time);
+    }
+    return { domNodes: [wrap] };
+  }
+
   if (isTodo) {
     const check = document.createElement("button");
     check.type = "button";
@@ -295,6 +376,9 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
 }
 
 function onEventDidMount(arg: EventMountArg): void {
+  const color = String(arg.event.backgroundColor || lastColor());
+  arg.el.style.setProperty("--cb-event-color", color);
+  arg.el.style.setProperty("--cb-event-on-color", textColorFor(color));
   scheduleAdjustEventDuration(arg.el);
 }
 
@@ -302,6 +386,98 @@ function scheduleAdjustEventDuration(el: HTMLElement): void {
   window.requestAnimationFrame(() => {
     adjustEventDurationVisibility(el);
   });
+}
+
+function adjustMorePopover(): void {
+  const popover = document.querySelector<HTMLElement>(".fc-popover");
+  if (!popover) {
+    return;
+  }
+  const margin = 10;
+  const body = popover.querySelector<HTMLElement>(".fc-popover-body");
+  const cell = lastClickedMoreLink?.closest<HTMLElement>(".fc-daygrid-day");
+  
+  if (cell && body) {
+    const cellRect = cell.getBoundingClientRect();
+    const spaceAbove = cellRect.top;
+    const spaceBelow = window.innerHeight - cellRect.bottom;
+    const headerHeight = 26; // Height of the cell's date/lunar header
+    
+    if (spaceAbove > spaceBelow) {
+      // Pop upward: place popover above the cell's top edge
+      const maxWholeHeight = cellRect.top - margin;
+      const estimatedNonBody = 50; 
+      body.style.maxHeight = `${Math.max(120, maxWholeHeight - estimatedNonBody)}px`;
+      
+      const rect = popover.getBoundingClientRect();
+      let desiredViewportTop = cellRect.top - rect.height;
+      if (desiredViewportTop < margin) {
+        desiredViewportTop = margin;
+      }
+      
+      const topDelta = desiredViewportTop - rect.top;
+      if (Math.abs(topDelta) > 1) {
+        const currentTop = Number.parseFloat(popover.style.top || "0");
+        const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
+        popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
+      }
+    } else {
+      // Pop downward: place popover below the cell's date header
+      const maxWholeHeight = window.innerHeight - (cellRect.top + headerHeight) - margin;
+      const estimatedNonBody = 50;
+      body.style.maxHeight = `${Math.max(120, maxWholeHeight - estimatedNonBody)}px`;
+      
+      const rect = popover.getBoundingClientRect();
+      let desiredViewportTop = cellRect.top + headerHeight;
+      if (desiredViewportTop + rect.height > window.innerHeight - margin) {
+        desiredViewportTop = Math.max(margin, window.innerHeight - rect.height - margin);
+      }
+      
+      const topDelta = desiredViewportTop - rect.top;
+      if (Math.abs(topDelta) > 1) {
+        const currentTop = Number.parseFloat(popover.style.top || "0");
+        const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
+        popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
+      }
+    }
+  } else {
+    // Fallback if cell or body is missing
+    if (body) {
+      body.style.maxHeight = `${Math.max(140, Math.round(window.innerHeight * 0.56))}px`;
+    }
+    const rect = popover.getBoundingClientRect();
+    const maxViewportTop = Math.max(margin, window.innerHeight - rect.height - margin);
+    let desiredViewportTop = Math.min(Math.max(rect.top, margin), maxViewportTop);
+    
+    const topDelta = desiredViewportTop - rect.top;
+    if (Math.abs(topDelta) > 1) {
+      const currentTop = Number.parseFloat(popover.style.top || "0");
+      const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
+      popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
+    }
+  }
+
+  // Adjust left position
+  const nextRect = popover.getBoundingClientRect();
+  const maxViewportLeft = Math.max(margin, window.innerWidth - nextRect.width - margin);
+  const desiredViewportLeft = Math.min(Math.max(nextRect.left, margin), maxViewportLeft);
+  const leftDelta = desiredViewportLeft - nextRect.left;
+  if (Math.abs(leftDelta) > 1) {
+    const currentLeft = Number.parseFloat(popover.style.left || "0");
+    const baseLeft = Number.isFinite(currentLeft) ? currentLeft : 0;
+    popover.style.left = `${Math.max(0, baseLeft + leftDelta)}px`;
+  }
+
+  // Final safety check to make sure it doesn't overflow the viewport bottom
+  const finalRect = popover.getBoundingClientRect();
+  if (body && finalRect.bottom > window.innerHeight - margin) {
+    const available = Math.max(120, window.innerHeight - Math.max(finalRect.top, margin) - margin - 36);
+    body.style.maxHeight = `${available}px`;
+  }
+}
+
+function scheduleAdjustMorePopover(): void {
+  window.requestAnimationFrame(() => window.requestAnimationFrame(adjustMorePopover));
 }
 
 function adjustAllEventDurations(): void {
@@ -422,6 +598,12 @@ function scheduleSyncCalendarScrollbars(): void {
 function syncCalendarScrollbars(): void {
   const root = document.querySelector(".cb-calendar") as HTMLElement | null;
   if (!root) {
+    return;
+  }
+  if (currentViewKey() === "month") {
+    root.querySelectorAll<HTMLElement>(".fc-scroller").forEach((scroller) => {
+      scroller.style.overflowY = "";
+    });
     return;
   }
   const bodyScroller = root.querySelector<HTMLElement>(".fc-scroller-liquid-absolute");
@@ -636,8 +818,17 @@ function createAtPoint(date: Date, allDay: boolean): void {
   calendar.select(date, addMinutes(date, defaultDurationMinutes));
 }
 
+function isMonthDateDrillTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return Boolean(el?.closest(".fc-daygrid-day-number,.fc-daygrid-day-top"));
+}
+
 function onDateClick(info: DateClickArg): void {
   if (Date.now() < suppressUntil) {
+    return;
+  }
+  if (panelMode && currentViewKey() === "month" && isMonthDateDrillTarget(info.jsEvent?.target || null)) {
+    switchPanelView("day", info.date);
     return;
   }
   // 对齐 Notion：空白处单击不新建，双击或拖选才新建。
@@ -656,7 +847,7 @@ function onDateClick(info: DateClickArg): void {
   if (!isDouble) {
     return;
   }
-  createAtPoint(info.date, info.allDay);
+  createAtPoint(info.date, currentViewKey() === "month" ? true : info.allDay);
 }
 
 function onEventClick(info: EventClickArg): void {
@@ -799,7 +990,28 @@ function anchorLabel(view: ViewKey): string {
     }
     return iso;
   }
+  if (view === "month") {
+    const d = parseDate(anchorDate);
+    return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+  }
   return anchorDate;
+}
+
+function visiblePanelLabel(view: ViewKey): string {
+  if (!calendar) {
+    return anchorLabel(view);
+  }
+  const currentStart = fmtDate(calendar.view.currentStart);
+  if (view === "week") {
+    const iso = getIsoWeek(parseDate(currentStart));
+    const m = iso.match(/^(\d{4})-W(\d{2})$/);
+    return m ? `${m[1]}年第${parseInt(m[2], 10)}周` : iso;
+  }
+  if (view === "month") {
+    const d = parseDate(currentStart);
+    return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+  }
+  return currentStart;
 }
 
 function isShowingAnchor(view: ViewKey): boolean {
@@ -810,7 +1022,59 @@ function isShowingAnchor(view: ViewKey): boolean {
   if (view === "week") {
     return getIsoWeek(parseDate(currentStart)) === getIsoWeek(parseDate(anchorDate));
   }
+  if (view === "month") {
+    const current = parseDate(currentStart);
+    const anchor = parseDate(anchorDate);
+    return current.getFullYear() === anchor.getFullYear() && current.getMonth() === anchor.getMonth();
+  }
   return currentStart === anchorDate;
+}
+
+function panelToday(): string {
+  return fmtDate(new Date());
+}
+
+function isShowingPanelCurrentAnchor(anchor: string): boolean {
+  if (!panelMode || !calendar || !anchor) {
+    return false;
+  }
+  const view = currentViewKey();
+  const currentStart = fmtDate(calendar.view.currentStart);
+  if (view === "week") {
+    return getIsoWeek(parseDate(currentStart)) === getIsoWeek(parseDate(anchor));
+  }
+  if (view === "month") {
+    const current = parseDate(currentStart);
+    const target = parseDate(anchor);
+    return current.getFullYear() === target.getFullYear() && current.getMonth() === target.getMonth();
+  }
+  return currentStart === anchor;
+}
+
+function syncPanelCurrentAnchor(): void {
+  if (!panelMode || !calendar) {
+    return;
+  }
+  const next = panelToday();
+  if (next === panelCurrentAnchor) {
+    return;
+  }
+  const shouldFollow = isShowingPanelCurrentAnchor(panelCurrentAnchor);
+  panelCurrentAnchor = next;
+  anchorDate = next;
+  if (shouldFollow) {
+    calendar.gotoDate(next);
+  }
+  syncToolbar(document.getElementById("app")!);
+}
+
+function gotoPanelCurrentAnchor(): void {
+  if (!panelMode || !calendar) {
+    return;
+  }
+  syncPanelCurrentAnchor();
+  calendar.gotoDate(panelCurrentAnchor);
+  syncToolbar(document.getElementById("app")!);
 }
 
 function parseWeekLabel(input: string): string | null {
@@ -872,7 +1136,7 @@ function setupColorManager(listEl: HTMLElement, addBtn: HTMLButtonElement): void
     const colors = getPalette();
     listEl.innerHTML = colors.map((c, i) => `
       <div class="cb-color-row" draggable="true" data-index="${i}">
-        <span class="cb-color-grip" aria-hidden="true">⋮⋮</span>
+        <span class="cb-color-grip" aria-hidden="true"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></svg></span>
         <input type="color" class="cb-color-input" value="${c}" aria-label="第 ${i + 1} 个颜色">
         <button type="button" class="cb-color-del" aria-label="删除颜色" title="删除颜色"${colors.length <= 1 ? " disabled" : ""}>×</button>
       </div>
@@ -1172,6 +1436,10 @@ function positionAnchorEditor(el: HTMLElement, anchor: HTMLElement): void {
 }
 
 function editAnchorDate(anchor: HTMLElement): void {
+  if (panelMode) {
+    openPanelSettings(anchor);
+    return;
+  }
   if (anchorEditor) {
     closeAnchorEditor();
     return;
@@ -1202,7 +1470,7 @@ function editAnchorDate(anchor: HTMLElement): void {
       ${DURATION_OPTIONS.map((m) => `<option value="${m}">${durationLabel(m)}</option>`).join("")}
     </select>
     <div class="cb-anchor-divider"></div>
-    <label class="cb-anchor-label">颜色管理<span class="cb-anchor-hint">拖动排序 · 点击改色</span></label>
+    <label class="cb-anchor-label">颜色管理</label>
     <div class="cb-color-list"></div>
     <button type="button" class="cb-color-add" aria-label="添加颜色">＋ 添加颜色</button>
     <div class="cb-anchor-actions">
@@ -1246,12 +1514,7 @@ function editAnchorDate(anchor: HTMLElement): void {
     }
   };
 
-  if (!DURATION_OPTIONS.includes(defaultDurationMinutes)) {
-    const option = document.createElement("option");
-    option.value = String(defaultDurationMinutes);
-    option.textContent = durationLabel(defaultDurationMinutes);
-    durationSelect.appendChild(option);
-  }
+  defaultDurationMinutes = normalizeDurationOption(defaultDurationMinutes);
   durationSelect.value = String(defaultDurationMinutes);
 
   const save = async () => {
@@ -1301,6 +1564,96 @@ function editAnchorDate(anchor: HTMLElement): void {
   anchorEditor = { el, dispose };
   positionAnchorEditor(el, anchor);
   focusInput();
+}
+
+function openPanelSettings(anchor: HTMLElement): void {
+  if (anchorEditor) {
+    closeAnchorEditor();
+    return;
+  }
+  closePopover(true);
+  closeAnchorEditor();
+  closeWeatherPicker();
+  closeColorFilterPicker();
+  const view = currentViewKey();
+  const el = document.createElement("div");
+  el.className = "cb-anchor-editor cb-panel-settings";
+  el.setAttribute("role", "dialog");
+  el.innerHTML = `
+    <label class="cb-anchor-label">视图</label>
+    <div class="cb-panel-view-list" role="radiogroup" aria-label="切换日程面板视图">
+      ${PANEL_VIEWS.map((v) => `<button type="button" class="cb-panel-view-item${v === view ? " cb-panel-view-item--active" : ""}" data-panel-view="${v}" role="radio" aria-checked="${v === view ? "true" : "false"}">${PANEL_VIEW_LABELS[v]}</button>`).join("")}
+    </div>
+    <label class="cb-anchor-label">默认事件时长</label>
+    <select class="cb-duration-select">
+      ${DURATION_OPTIONS.map((m) => `<option value="${m}">${durationLabel(m)}</option>`).join("")}
+    </select>
+    <div class="cb-anchor-divider"></div>
+    <label class="cb-anchor-label">颜色管理</label>
+    <div class="cb-color-list"></div>
+    <button type="button" class="cb-color-add" aria-label="添加颜色">＋ 添加颜色</button>
+    <div class="cb-anchor-actions">
+      <button type="button" class="cb-anchor-cancel">取消</button>
+      <button type="button" class="cb-anchor-save">保存</button>
+    </div>
+  `;
+  document.body.appendChild(el);
+
+  const durationSelect = el.querySelector(".cb-duration-select") as HTMLSelectElement;
+  const saveBtn = el.querySelector(".cb-anchor-save") as HTMLButtonElement;
+  const cancelBtn = el.querySelector(".cb-anchor-cancel") as HTMLButtonElement;
+  const colorList = el.querySelector(".cb-color-list") as HTMLElement;
+  const colorAddBtn = el.querySelector(".cb-color-add") as HTMLButtonElement;
+  setupColorManager(colorList, colorAddBtn);
+  defaultDurationMinutes = normalizeDurationOption(defaultDurationMinutes);
+  durationSelect.value = String(defaultDurationMinutes);
+
+  el.querySelectorAll<HTMLButtonElement>("[data-panel-view]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchPanelView(btn.dataset.panelView as ViewKey);
+      el.querySelectorAll<HTMLButtonElement>("[data-panel-view]").forEach((item) => {
+        const active = item === btn;
+        item.classList.toggle("cb-panel-view-item--active", active);
+        item.setAttribute("aria-checked", active ? "true" : "false");
+      });
+    });
+  });
+
+  const save = () => {
+    savePanelDefaultDuration(parseDurationMinutes(durationSelect.value));
+    closeAnchorEditor();
+  };
+  saveBtn.addEventListener("click", save);
+  cancelBtn.addEventListener("click", closeAnchorEditor);
+
+  const onKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      closeAnchorEditor();
+    }
+    const targetTag = (event.target as HTMLElement | null)?.tagName.toLowerCase();
+    if (event.key === "Enter" && targetTag !== "button") {
+      event.preventDefault();
+      save();
+    }
+  };
+  el.addEventListener("keydown", onKeydown);
+
+  const onOutsideMousedown = (event: MouseEvent) => {
+    const target = event.target as Node;
+    if (!el.contains(target) && !anchor.contains(target)) {
+      closeAnchorEditor();
+    }
+  };
+  const timer = window.setTimeout(() => {
+    document.addEventListener("mousedown", onOutsideMousedown, true);
+  }, 0);
+  const dispose = () => {
+    window.clearTimeout(timer);
+    document.removeEventListener("mousedown", onOutsideMousedown, true);
+  };
+  anchorEditor = { el, dispose };
+  positionAnchorEditor(el, anchor);
 }
 
 /* ---------- 工具栏 ---------- */
@@ -1412,12 +1765,29 @@ function openCreatePopover(opts: {
   });
 }
 
+function switchPanelView(view: ViewKey, date?: Date | string): void {
+  if (!panelMode || !calendar || !VIEW_MAP[view]) {
+    return;
+  }
+  closeAnchorEditor();
+  closeColorFilterPicker();
+  closeWeatherPicker();
+  closePopover(true);
+  toolbarCreatePopoverOpen = false;
+  hideEventNoteTooltip();
+  const target = date || calendar.getDate();
+  calendar.changeView(VIEW_MAP[view], target);
+  syncToolbar(document.getElementById("app")!);
+  scheduleSyncCalendarScrollbars();
+}
+
 function buildToolbar(root: HTMLElement, view: ViewKey): void {
   const anchor = anchorLabel(view);
+  const settingsLabel = panelMode ? "切换视图" : `修改绑定${view === "week" ? "周次" : "日期"}`;
   root.innerHTML = `
     <div class="cb-toolbar">
       <div class="cb-toolbar-left">
-        <button type="button" class="cb-icon-btn cb-btn-settings" aria-label="修改绑定${view === "week" ? "周次" : "日期"}" title="修改绑定${view === "week" ? "周次" : "日期"}">
+        <button type="button" class="cb-icon-btn cb-btn-settings" aria-label="${settingsLabel}" title="${settingsLabel}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5l-2-3.5l-2.4 1a8.4 8.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A8.4 8.4 0 0 0 7 6.5l-2.4-1l-2 3.5l2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5l2 3.5l2.4-1a8.4 8.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a8.4 8.4 0 0 0 2.6-1.5l2.4 1l2-3.5l-2-1.5ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>
         </button>
         <button type="button" class="cb-icon-btn cb-btn-filter" aria-label="按颜色筛选日程" title="按颜色筛选日程">
@@ -1454,7 +1824,9 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
     openColorFilterPicker(event.currentTarget as HTMLElement);
   });
   root.querySelector(".cb-btn-anchor")!.addEventListener("click", () => {
-    if (anchorDate) {
+    if (panelMode) {
+      gotoPanelCurrentAnchor();
+    } else if (anchorDate) {
       calendar.gotoDate(anchorDate);
     }
   });
@@ -1488,8 +1860,8 @@ function syncToolbar(root: HTMLElement): void {
   const key = currentViewKey();
   const anchorBtn = root.querySelector(".cb-btn-anchor") as HTMLElement;
   if (anchorBtn) {
-    anchorBtn.textContent = anchorLabel(key) || (key === "week" ? "锚定周" : "锚定日期");
-    anchorBtn.classList.toggle("cb-btn-anchor--active", isShowingAnchor(key));
+    anchorBtn.textContent = panelMode ? visiblePanelLabel(key) : (anchorLabel(key) || (key === "week" ? "锚定周" : "锚定日期"));
+    anchorBtn.classList.toggle("cb-btn-anchor--active", panelMode ? isShowingPanelCurrentAnchor(panelCurrentAnchor) : isShowingAnchor(key));
   }
 }
 
@@ -1497,7 +1869,7 @@ function syncToolbar(root: HTMLElement): void {
 
 let persistTimer = 0;
 function persistViewState(): void {
-  if (!blockId) {
+  if (!blockId || currentViewKey() === "month") {
     return;
   }
   const key = currentViewKey();
@@ -1519,7 +1891,7 @@ function persistViewState(): void {
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
+  const el = target instanceof HTMLElement ? target : null;
   if (!el) {
     return false;
   }
@@ -1533,17 +1905,22 @@ async function boot(): Promise<void> {
   initThemeBridge();
 
   const params = new URLSearchParams(window.location.search);
+  panelMode = params.get("mode") === "panel";
   if (params.get("view") === "quickadd") {
     await bootQuickAdd();
     return;
   }
+  if (panelMode) {
+    document.body.dataset.mode = "panel";
+    defaultDurationMinutes = loadPanelDefaultDuration();
+  }
 
   const frame = window.frameElement as HTMLElement | null;
   const blockEl = (frame?.closest("[data-node-id]") as HTMLElement | null) || null;
-  blockId = blockEl?.getAttribute("data-node-id") || "";
+  blockId = panelMode ? "" : blockEl?.getAttribute("data-node-id") || "";
 
   // 新插入的挂件块给一个合适的默认高度（思源把高度存于块的 style 属性）
-  if (blockEl && !blockEl.style.height) {
+  if (!panelMode && blockEl && !blockEl.style.height) {
     blockEl.style.height = DEFAULT_HEIGHT;
     if (blockId) {
       setBlockAttrs(blockId, { style: `height: ${DEFAULT_HEIGHT};` }).catch(() => {});
@@ -1556,12 +1933,12 @@ async function boot(): Promise<void> {
   }
   store.docId = docId;
 
-  let view = (params.get("view") as ViewKey) || "week";
-  let date = params.get("date") || "";
+  let view = (params.get("view") as ViewKey) || (panelMode ? "month" : "week");
+  let date = panelMode ? panelToday() : (params.get("date") || "");
   if (blockId) {
     try {
       const attrs = await getBlockAttrs(blockId);
-      if (attrs[VIEW_ATTR] && VIEW_MAP[attrs[VIEW_ATTR] as ViewKey]) {
+      if (attrs[VIEW_ATTR] && VIEW_MAP[attrs[VIEW_ATTR] as ViewKey] && attrs[VIEW_ATTR] !== "month") {
         view = attrs[VIEW_ATTR] as ViewKey;
       }
       if (attrs[DATE_ATTR] && isValidDateStr(attrs[DATE_ATTR])) {
@@ -1582,9 +1959,16 @@ async function boot(): Promise<void> {
   if (!VIEW_MAP[view]) {
     view = "week";
   }
+  if (!panelMode && view === "month") {
+    view = "week";
+  }
   persistedViewKey = view;
+  panelCurrentAnchor = panelToday();
+  if (panelMode) {
+    date = panelCurrentAnchor;
+  }
 
-  // 锚定日期：优先用标题解析，否则用属性或今日
+  // 锚定日期：面板使用当前时间；嵌入块优先用标题解析，否则用属性或今日。
   anchorDate = date || fmtDate(new Date());
 
   const root = document.getElementById("app")!;
@@ -1613,7 +1997,7 @@ async function boot(): Promise<void> {
   }
 
   calendar = new Calendar(root.querySelector(".cb-calendar") as HTMLElement, {
-    plugins: [timeGridPlugin, interactionPlugin],
+    plugins: [timeGridPlugin, dayGridPlugin, interactionPlugin],
     locale: zhCnLocale,
     firstDay: 1,
     initialView: VIEW_MAP[view],
@@ -1630,6 +2014,8 @@ async function boot(): Promise<void> {
     eventResizableFromStart: true,
     eventDurationEditable: true,
     dayMaxEvents: true,
+    moreLinkClick: "popover",
+    fixedWeekCount: false,
     allDaySlot: true,
     slotMinTime: "00:00:00",
     slotMaxTime: "24:00:00",
@@ -1646,8 +2032,25 @@ async function boot(): Promise<void> {
     slotLabelFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
     eventTimeFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
     moreLinkText: (n) => `还有 ${n} 项`,
+    dayCellContent: (arg) => {
+      if (VIEW_KEY[arg.view.type] !== "month") {
+        return { html: arg.dayNumberText };
+      }
+      const dateText = arg.date.getDate() === 1 ? `${arg.date.getMonth() + 1}月${arg.date.getDate()}日` : `${arg.date.getDate()}日`;
+      const lunar = monthLunarLabel(arg.date);
+      const monthWeatherKind = weatherStore.get(fmtDate(arg.date)) || "";
+      const monthWeather = monthWeatherKind
+        ? `<span class="cb-month-weather" aria-label="${WEATHER_LABELS[monthWeatherKind]}" title="${WEATHER_LABELS[monthWeatherKind]}">${weatherIcon(monthWeatherKind)}</span>`
+        : "";
+      return {
+        html: `<span class="cb-month-day-head"><span class="cb-month-day-solar">${dateText}</span><span class="cb-month-day-lunar">${lunar}</span>${monthWeather}</span>`
+      };
+    },
     dayHeaderContent: (arg) => {
       const dow = arg.date.toLocaleDateString("zh-CN", { weekday: "short" });
+      if (VIEW_KEY[arg.view.type] === "month") {
+        return { html: `<span class="cb-dh-month-weekday">${dow}</span>` };
+      }
       const dateLabel = `${arg.date.getMonth() + 1}月${arg.date.getDate()}日`;
       const lunarLabel = lunarDateLabel(arg.date);
       const dateKey = fmtDate(arg.date);
@@ -1683,19 +2086,41 @@ async function boot(): Promise<void> {
   syncToolbar(root);
   scheduleSyncCalendarScrollbars();
 
-  document.addEventListener("keydown", (event) => {
-    if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.key.toLowerCase() !== "z" || isEditableTarget(event.target)) {
+  const onKeydown = (event: KeyboardEvent) => {
+    if (isEditableTarget(event.target)) {
       return;
     }
-    event.preventDefault();
-    store.undo()
-      .then((ok) => {
-        if (ok) {
-          refresh();
-        }
-      })
-      .catch(showError);
-  });
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      store.undo()
+        .then((ok) => {
+          if (ok) {
+            refresh();
+          }
+        })
+        .catch(showError);
+      return;
+    }
+    if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      if (panelMode) {
+        gotoPanelCurrentAnchor();
+      } else if (anchorDate) {
+        calendar.gotoDate(anchorDate);
+        syncToolbar(root);
+      }
+      return;
+    }
+    if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      event.preventDefault();
+      if (event.key === "ArrowLeft") {
+        calendar.prev();
+      } else {
+        calendar.next();
+      }
+    }
+  };
+  window.addEventListener("keydown", onKeydown);
 
   let isDirty = false;
   store.onRemoteChange = () => {
@@ -1721,6 +2146,7 @@ async function boot(): Promise<void> {
           calendar.updateSize();
           scheduleSyncCalendarScrollbars();
           adjustAllEventDurations();
+          scheduleAdjustMorePopover();
         }
       }
     }
@@ -1729,6 +2155,22 @@ async function boot(): Promise<void> {
   if (calendarEl) {
     resizeObserver.observe(calendarEl);
     calendarEl.addEventListener("click", (ev) => {
+      const dayNumber = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".fc-daygrid-day-number");
+      if (panelMode && currentViewKey() === "month" && dayNumber) {
+        const dayCell = dayNumber.closest<HTMLElement>(".fc-daygrid-day[data-date]");
+        const date = dayCell?.dataset.date || "";
+        if (isValidDateStr(date)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          switchPanelView("day", parseDate(date));
+          return;
+        }
+      }
+      const moreLink = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".fc-daygrid-more-link");
+      if (moreLink) {
+        lastClickedMoreLink = moreLink;
+        scheduleAdjustMorePopover();
+      }
       const todoCheck = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".cb-event-check[data-event-id]");
       if (todoCheck) {
         ev.preventDefault();
@@ -1767,17 +2209,21 @@ async function boot(): Promise<void> {
       }
       const { date, allDay } = last;
       lastEmptyClick = { time: 0, x: 0, y: 0, allDay: false, date: null };
-      createAtPoint(date, allDay);
+      createAtPoint(date, currentViewKey() === "month" ? true : allDay);
     });
   }
 
+  const panelCurrentTimer = window.setInterval(syncPanelCurrentAnchor, 60000);
+
   document.addEventListener("visibilitychange", () => {
+    syncPanelCurrentAnchor();
     if (!document.hidden && isDirty) {
       isDirty = false;
       refresh();
     }
   });
   window.addEventListener("focus", () => {
+    syncPanelCurrentAnchor();
     if (isDirty) {
       isDirty = false;
       refresh();
@@ -1788,6 +2234,7 @@ async function boot(): Promise<void> {
     showError(new Error("无法读取日程数据，请在思源中打开"));
   }
   store.startAutoRefresh(30000);
+  window.addEventListener("beforeunload", () => window.clearInterval(panelCurrentTimer));
 }
 
 async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
@@ -1805,7 +2252,13 @@ async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
   const previousTitle = button.title;
   button.title = "正在截图...";
   document.body.classList.add("cb-screenshot-capturing");
+  calendar.updateSize();
+  refreshWeatherHeaders();
+  adjustAllEventDurations();
+  scheduleSyncCalendarScrollbars();
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  calendar.updateSize();
+  await new Promise((resolve) => requestAnimationFrame(resolve));
 
   try {
     const canvas = await html2canvas(appEl, {
@@ -1838,7 +2291,8 @@ function screenshotFileName(): string {
   const startStr = fmtDate(calendar.view.activeStart);
   const endStr = addDaysStr(fmtDate(calendar.view.activeEnd), -1);
   const range = startStr === endStr ? startStr : `${startStr}_${endStr}`;
-  const viewName = currentViewKey() === "week" ? "周历块" : "日历块";
+  const key = currentViewKey();
+  const viewName = key === "week" ? "周历块" : key === "month" ? "日程月视图" : "日历块";
   return `${viewName}-${range}.png`;
 }
 

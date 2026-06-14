@@ -1,12 +1,18 @@
 # Schedule Block
 
-Schedule Block embeds lightweight day and week timelines directly inside SiYuan documents.
+Schedule Block is a lightweight timeline toolkit for SiYuan, offered in two ways:
 
-It is not a global calendar and it is not a replacement for database calendar views. It focuses on a narrower workflow: putting an editable schedule inside the note you are already writing, without creating a database or switching to a separate calendar page.
+- **Embedded schedule blocks** placed directly inside documents, bound to a specific day or week.
+- **A standalone schedule panel** opened from the top-bar menu as a tab, showing the same data at full size with switchable day / week / month views and automatic follow of the current time — a good fit for a personal main schedule.
+
+It is not a global calendar and it is not a replacement for database calendar views. It focuses on a narrower workflow: an editable, draggable, persistent schedule without creating a database or leaving SiYuan.
 
 ## Highlights
 
-- Standalone day blocks and week blocks.
+- Standalone schedule panel (tab) with switchable day / week / month views.
+- The panel follows the current time automatically: the now indicator advances every minute and the view rolls over to the new day at midnight, with no need to reopen it.
+- Month view shows Gregorian + lunar dates per cell, compact dot-style events, a "+N more" popover when overflowing, and per-day weather.
+- Embedded day blocks and week blocks for inline use in documents.
 - Each block is bound to a date or ISO week, with a toolbar anchor that jumps back to that bound range.
 - New blocks can infer their initial date or week from the document title; if no supported title date is found, they use the current date.
 - Settings allow changing the bound date/week and the default event duration.
@@ -30,7 +36,8 @@ It is not a global calendar and it is not a replacement for database calendar vi
 
 ## Colors and Filtering
 
-- Events can be colored with a Google Calendar-style palette.
+- Events can be colored with an Apple system palette (the same green/blue/red/yellow/purple as Apple Calendar): harmonious, distinguishable even in month view, with dark text auto-applied on light colors for readability.
+- The block's "color management" lets you drag to reorder, click to recolor, and add/remove colors; changes apply instantly and sync everywhere.
 - A toolbar filter button lets you choose which event colors are visible in the current schedule block.
 - The filter palette uses the same color order as the event editor.
 - When all colors are selected, all events are shown; clicking a color in this state switches directly to "only this color".
@@ -43,13 +50,17 @@ The day header uses a compact two-line layout:
 - Line 1: Gregorian date and lunar date.
 - Line 2: weekday and weather icon.
 
-Weather supports four simple states: sunny, overcast, rain, and snow. Click the weather icon to set or clear the day weather. Empty days use a neutral weather placeholder icon, not a specific weather state.
+Weather supports four simple states: sunny, overcast, rain, and snow. Click the weather icon to set or clear the day weather. Empty days use a neutral weather placeholder icon, not a specific weather state. Month view shows the set weather icon after each date.
 
 Weather data is stored separately from event data.
 
 ## Usage
 
-After enabling the plugin, insert a schedule block from:
+After enabling the plugin:
+
+- Open the standalone panel from the top-bar Schedule Block menu → "Open Schedule Panel".
+
+Or insert a schedule block into a document from:
 
 - the top-bar Schedule Block menu,
 - the command palette,
@@ -70,6 +81,10 @@ Inside a block, you can:
 - hover an event with notes to preview the note,
 - drag existing events to adjust time,
 - click the weather icon in the day header to set the day weather.
+- **Keyboard Shortcuts** (requires clicking the schedule view to focus):
+  - `ArrowLeft` / `ArrowRight`: Navigate to the previous day/week/month or next day/week/month.
+  - `T`: Reset view. In the standalone schedule panel, it jumps to **absolute today/current time**; in embedded document blocks, it jumps back to the **bound default date/week**.
+  - `Command+Z` / `Ctrl+Z`: Undo the last event editing action.
 
 ## Data
 

@@ -1,12 +1,14 @@
 import { readWorkspaceFile, writeWorkspaceFile } from "./api";
 
-/** Notion 风格的低饱和默认取色板，保持事件色块可读但不过亮 */
+/** 默认取色板：取自 Apple 系统色（Calendar 同款），绿蓝红黄紫；
+   配色经过苹果调校，整体和谐不刺眼，月视图下蓝绿也清晰可分；
+   亮色（黄、绿）会由 textColorFor 自动转深色字保证可读性 */
 export const DEFAULT_PALETTE = [
-  "#548164", // 绿
-  "#487ca5", // 蓝
-  "#c4554d", // 红
-  "#c29343", // 黄
-  "#8a67ab" // 紫
+  "#34c759", // 绿 systemGreen
+  "#007aff", // 蓝 systemBlue
+  "#ff3b30", // 红 systemRed
+  "#ffcc00", // 黄 systemYellow
+  "#af52de" // 紫 systemPurple
 ];
 
 const FILE = "/data/storage/schedule-block/palette.json";
