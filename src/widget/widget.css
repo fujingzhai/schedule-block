@@ -1687,21 +1687,6 @@ body.cb-screenshot-capturing .cb-calendar {
   overflow: visible !important;
 }
 
-body.cb-screenshot-capturing .fc-scroller {
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
-}
-
-body.cb-screenshot-capturing .fc-scroller-harness {
-  height: auto !important;
-  overflow: visible !important;
-}
-
-body.cb-screenshot-capturing .fc-scrollgrid {
-  height: auto !important;
-}
-
 body.cb-screenshot-capturing .cb-toolbar-left,
 body.cb-screenshot-capturing .cb-toolbar-right,
 body.cb-screenshot-capturing .cb-nav,

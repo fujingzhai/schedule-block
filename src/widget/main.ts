@@ -2288,6 +2288,7 @@ async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
   const previousTitle = button.title;
   button.title = "正在截图...";
   document.body.classList.add("cb-screenshot-capturing");
+  calendar.setOption("height", "auto");
   calendar.updateSize();
   refreshWeatherHeaders();
   adjustAllEventDurations();
@@ -2306,6 +2307,7 @@ async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
     await saveScreenshotBlob(blob, screenshotFileName());
   } finally {
     document.body.classList.remove("cb-screenshot-capturing");
+    calendar.setOption("height", "100%");
     calendar.updateSize();
     button.disabled = false;
     button.title = previousTitle;
