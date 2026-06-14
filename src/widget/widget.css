@@ -437,9 +437,14 @@ body[data-mode="panel"] .cb-calendar.fc .fc-daygrid-more-link:hover {
 }
 
 /* :not(.fc-popover)：今天的「+N 项」弹窗也带 fc-day-today 类，
-   若不排除会被这条 !important 染成半透明灰底，露出底层格子内容 */
-.cb-calendar.fc .fc-day-today:not(.fc-popover) {
+   若不排除会被这条 !important 染成半透明灰底，露出底层格子内容；
+   排除 .fc-timegrid-col 是因为时间轴（Timeline）部分不需要今日背景高亮，仅保留顶部日期头部和月视图单元格的高亮 */
+.cb-calendar.fc .fc-day-today:not(.fc-popover):not(.fc-timegrid-col) {
   background-color: rgba(128, 128, 128, 0.07) !important;
+}
+
+.cb-calendar.fc .fc-timegrid-col.fc-day-today {
+  background-color: transparent !important;
 }
 
 .cb-calendar.fc-theme-standard .fc-scrollgrid {
@@ -938,14 +943,31 @@ body[data-mode="panel"] .cb-calendar .fc-event.cb-event--todo-done .cb-event-tit
   border-right: none !important;
   border-bottom: none !important;
   border-radius: 4px !important;
-  color: color-mix(in srgb, var(--cb-event-color) 85%, #000000) !important;
   cursor: pointer;
   transition: background-color 0.15s, filter 0.1s;
 }
 
+/* 统一在亮色主题下使用深色文本，暗色主题下使用浅色文本，确保在半透明背景上清晰易读，覆盖 FullCalendar 默认的自适应前景色 */
+.cb-calendar .fc-event,
+.cb-calendar .fc-event .cb-event-title,
+.cb-calendar .fc-event .cb-event-time,
+.cb-calendar .fc-event .cb-event-duration,
+.cb-calendar .fc-event .fc-event-main,
+.cb-calendar .fc-event .cb-event-check {
+  color: var(--b3-theme-on-background, #1f2329) !important;
+}
+
 :root[data-theme-mode="dark"] .cb-calendar .fc-event {
   background-color: color-mix(in srgb, var(--cb-event-color) 16%, var(--b3-theme-background, #1b1b1f)) !important;
-  color: color-mix(in srgb, var(--cb-event-color) 35%, #ffffff) !important;
+}
+
+:root[data-theme-mode="dark"] .cb-calendar .fc-event,
+:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-title,
+:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-time,
+:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-duration,
+:root[data-theme-mode="dark"] .cb-calendar .fc-event .fc-event-main,
+:root[data-theme-mode="dark"] .cb-calendar .fc-event .cb-event-check {
+  color: var(--b3-theme-on-background, #ffffff) !important;
 }
 
 .cb-calendar .fc-event:hover {
