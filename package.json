@@ -1,6 +1,6 @@
 {
   "name": "schedule-block",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "A SiYuan plugin for embedding day and week schedule blocks in documents.",
   "repository": "https://github.com/fujingzhai/schedule-block",
   "homepage": "",

@@ -91,8 +91,14 @@ export default class CalendarBlockPlugin extends Plugin {
     this.addCommand({
       langKey: "scheduleQuickAdd",
       langText: "添加日程",
-      hotkey: "⌥⌘K",
+      hotkey: "⌥⌘S",
       callback: () => this.openQuickAdd()
+    });
+    this.addCommand({
+      langKey: "scheduleOpenPanel",
+      langText: "打开日程面板",
+      hotkey: "⌥⇧⌘S",
+      callback: () => this.openPanel()
     });
 
     try {
@@ -104,6 +110,8 @@ export default class CalendarBlockPlugin extends Plugin {
           this.closeQuickAdd();
         } else if (msg.type === "quickadd-cancel") {
           this.closeQuickAdd();
+        } else if (msg.type === "quickadd-open") {
+          this.openQuickAdd();
         }
       };
     } catch {

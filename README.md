@@ -23,7 +23,8 @@ It is not a global calendar and it is not a replacement for database calendar vi
 - Drag or resize events to adjust time.
 - Hover an event with notes to show the note in a lightweight tooltip; it disappears when the mouse leaves.
 - Use `Cmd/Ctrl+Z` to undo the previous schedule data operation.
-- Use the Add Schedule command, with `Option+Command+K` by default, to quickly add an event outside a specific schedule block.
+- Use the Add Schedule command, with `Option+Command+S` by default, to quickly add an event outside a specific schedule block.
+- Use the Open Schedule Panel command, with `Option+Command+Shift+S` by default, to open the standalone panel.
 - Export the current day or week schedule block as a PNG screenshot.
 
 ## Interaction Details
@@ -58,7 +59,7 @@ Weather data is stored separately from event data.
 
 After enabling the plugin:
 
-- Open the standalone panel from the top-bar Schedule Block menu → "Open Schedule Panel".
+- Open the standalone panel from the top-bar Schedule Block menu → "Open Schedule Panel", or press `Option+Command+Shift+S`.
 
 Or insert a schedule block into a document from:
 
@@ -68,7 +69,7 @@ Or insert a schedule block into a document from:
 
 Inside a block, you can:
 
-- use Add Schedule from the top-bar menu, or press `Option+Command+K`, to open the same event editor centered over the SiYuan window with a frosted background overlay,
+- use Add Schedule from the top-bar menu, or press `Option+Command+S` from SiYuan, to open the same event editor centered over the SiYuan window with a frosted background overlay,
 - use document titles such as `2026-6-13`, `2026/06/13`, `2026年6月13日`, `20260613`, `2026-W26`, or `2026年第26周` to auto-bind newly inserted blocks,
 - click the anchor button to return to the bound date or week,
 - click the gear button to edit the binding and default event duration,
@@ -84,6 +85,7 @@ Inside a block, you can:
 - **Keyboard Shortcuts** (requires clicking the schedule view to focus):
   - `ArrowLeft` / `ArrowRight`: Navigate to the previous day/week/month or next day/week/month.
   - `T`: Reset view. In the standalone schedule panel, it jumps to **absolute today/current time**; in embedded document blocks, it jumps back to the **bound default date/week**.
+  - `S`: Open Add Schedule while focus is inside a schedule block or the standalone panel.
   - `Command+Z` / `Ctrl+Z`: Undo the last event editing action.
 
 ## Data

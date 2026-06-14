@@ -53,6 +53,7 @@ const DEFAULT_DURATION_MINUTES = 30;
 const DURATION_OPTIONS = [15, 30, 45, 60];
 const LAST_COLOR_KEY = "schedule-block-last-color";
 const PANEL_DURATION_KEY = "schedule-block-panel-default-duration";
+const UI_CHANNEL = "schedule-block-ui";
 const SNAP_MINUTES = 15;
 
 const store = new EventStore();
@@ -166,6 +167,34 @@ function savePanelDefaultDuration(minutes: number): void {
     // 忽略
   }
   calendar.setOption("defaultTimedEventDuration", durationToFullCalendar(defaultDurationMinutes));
+}
+
+function isQuickAddShortcut(event: KeyboardEvent): boolean {
+  return !event.metaKey
+    && !event.altKey
+    && !event.ctrlKey
+    && !event.shiftKey
+    && event.key.toLowerCase() === "s";
+}
+
+function postUiMessage(message: Record<string, unknown>): void {
+  try {
+    const channel = new BroadcastChannel(UI_CHANNEL);
+    channel.postMessage(message);
+    channel.close();
+  } catch {
+    // BroadcastChannel 不可用时忽略
+  }
+}
+
+function installQuickAddShortcutBridge(): void {
+  window.addEventListener("keydown", (event) => {
+    if (isEditableTarget(event.target)) return;
+    if (!isQuickAddShortcut(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    postUiMessage({ type: "quickadd-open" });
+  }, true);
 }
 
 function eventDurationMinutes(event: EventApi): number {
@@ -338,6 +367,13 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
       wrap.appendChild(time);
     }
     return { domNodes: [wrap] };
+  }
+
+  if (arg.event.allDay) {
+    const marker = document.createElement("span");
+    marker.className = "cb-allday-event-marker";
+    marker.style.backgroundColor = String(arg.event.backgroundColor || lastColor());
+    wrap.appendChild(marker);
   }
 
   if (isTodo) {
@@ -1974,6 +2010,7 @@ async function boot(): Promise<void> {
     await bootQuickAdd();
     return;
   }
+  installQuickAddShortcutBridge();
   if (panelMode) {
     document.body.dataset.mode = "panel";
     defaultDurationMinutes = loadPanelDefaultDuration();
@@ -2469,16 +2506,10 @@ async function bootQuickAdd(): Promise<void> {
   }
 
   const notifyHost = (savedText: string | null) => {
-    try {
-      const channel = new BroadcastChannel("schedule-block-ui");
-      channel.postMessage(savedText
-        ? { type: "quickadd-saved", text: savedText }
-        : { type: "quickadd-cancel" }
-      );
-      channel.close();
-    } catch {
-      // BroadcastChannel 失败时忽略
-    }
+    postUiMessage(savedText
+      ? { type: "quickadd-saved", text: savedText }
+      : { type: "quickadd-cancel" }
+    );
   };
 
   const root = document.getElementById("app")!;
