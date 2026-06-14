@@ -129,23 +129,12 @@ export default class CalendarBlockPlugin extends Plugin {
     this.quickDialog = new Dialog({
       title: "",
       content: `<iframe src="/plugins/schedule-block/widget/index.html?view=quickadd"
-        style="width:100%;height:380px;border:0;display:block;background:transparent;" allowfullscreen></iframe>`,
+        style="width:100%;height:380px;border:0;display:block;border-radius:8px;" allowfullscreen></iframe>`,
       width: "374px",
       destroyCallback: () => {
         this.quickDialog = null;
       }
     });
-
-    const container = this.quickDialog.element.querySelector(".b3-dialog__container") as HTMLElement;
-    if (container) {
-      container.style.boxShadow = "none";
-      container.style.border = "none";
-      container.style.background = "transparent";
-    }
-    const content = this.quickDialog.element.querySelector(".b3-dialog__content") as HTMLElement;
-    if (content) {
-      content.style.padding = "0";
-    }
   }
 
   private closeQuickAdd() {

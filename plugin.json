@@ -2,10 +2,18 @@
   "name": "schedule-block",
   "author": "游夏",
   "url": "https://github.com/fujingzhai/schedule-block",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "minAppVersion": "3.6.0",
-  "backends": ["windows", "linux", "darwin"],
-  "frontends": ["desktop", "desktop-window", "browser-desktop"],
+  "backends": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "frontends": [
+    "desktop",
+    "desktop-window",
+    "browser-desktop"
+  ],
   "displayName": {
     "default": "Schedule Block",
     "zh_CN": "日程块"
@@ -18,5 +26,12 @@
     "default": "README.md",
     "zh_CN": "README_zh_CN.md"
   },
-  "keywords": ["calendar", "schedule", "日程块", "日历", "周历", "日程"]
+  "keywords": [
+    "calendar",
+    "schedule",
+    "日程块",
+    "日历",
+    "周历",
+    "日程"
+  ]
 }
