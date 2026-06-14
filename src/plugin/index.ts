@@ -200,7 +200,8 @@ export default class CalendarBlockPlugin extends Plugin {
     const candidates = [
       target,
       event.currentTarget instanceof Element ? event.currentTarget : null,
-      this.topBarElement || null
+      this.topBarElement || null,
+      this.findPluginMenuAnchor()
     ];
     for (const el of candidates) {
       const rect = el?.getBoundingClientRect();
@@ -208,7 +209,40 @@ export default class CalendarBlockPlugin extends Plugin {
         return rect;
       }
     }
-    return new DOMRect(0, 0, 1, 1);
+    const fallbackSize = 28;
+    return new DOMRect(Math.max(window.innerWidth - fallbackSize - 12, 0), 8, fallbackSize, fallbackSize);
+  }
+
+  private findPluginMenuAnchor(): HTMLElement | null {
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>(
+      [
+        ".toolbar__item",
+        "button",
+        "[data-type]"
+      ].join(",")
+    ));
+    let best: { el: HTMLElement; score: number } | null = null;
+    for (const el of candidates) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.right <= 0) {
+        continue;
+      }
+      if (rect.top > 96 || rect.left < window.innerWidth / 2) {
+        continue;
+      }
+      const label = [
+        el.getAttribute("aria-label"),
+        el.getAttribute("title"),
+        el.getAttribute("data-type"),
+        el.textContent
+      ].filter(Boolean).join(" ").toLowerCase();
+      const isPluginButton = label.includes("插件") || label.includes("plugin") || label.includes("plugins");
+      const score = rect.right + (isPluginButton ? 10000 : 0);
+      if (!best || score > best.score) {
+        best = { el, score };
+      }
+    }
+    return best?.el || null;
   }
 
   /** 斜杠菜单使用编辑器原生插入，避免先插入再延迟删除触发块造成闪烁 */
