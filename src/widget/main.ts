@@ -399,21 +399,37 @@ function adjustMorePopover(): void {
   
   if (cell && body) {
     const cellRect = cell.getBoundingClientRect();
-    const spaceAbove = cellRect.top;
-    const spaceBelow = window.innerHeight - cellRect.bottom;
+    const spaceAbove = cellRect.top - margin;
     const headerHeight = 26; // Height of the cell's date/lunar header
+    const spaceBelow = window.innerHeight - (cellRect.top + headerHeight) - margin;
     
-    if (spaceAbove > spaceBelow) {
+    // Temporarily clear maxHeight to measure natural height of the popover
+    body.style.maxHeight = "9999px";
+    
+    // Force layout reflow so the browser applies style changes before querying size
+    const _reflow = popover.offsetHeight;
+    const naturalHeight = popover.getBoundingClientRect().height;
+    const estimatedNonBody = 50; 
+    
+    let desiredViewportTop = cellRect.top + headerHeight;
+    let popUpward = false;
+    
+    // Only pop upward if the popover doesn't fit downward AND there is more space above
+    if (naturalHeight > spaceBelow) {
+      if (spaceAbove > spaceBelow) {
+        popUpward = true;
+      }
+    }
+    
+    if (popUpward) {
       // Pop upward: place popover above the cell's top edge
-      const maxWholeHeight = cellRect.top - margin;
-      const estimatedNonBody = 50; 
-      body.style.maxHeight = `${Math.max(120, maxWholeHeight - estimatedNonBody)}px`;
+      body.style.maxHeight = `${Math.max(120, spaceAbove - estimatedNonBody)}px`;
       
       // Force layout reflow so the browser applies style changes before querying size
-      const _reflow = popover.offsetHeight;
+      const _reflow2 = popover.offsetHeight;
       const rect = popover.getBoundingClientRect();
       
-      let desiredViewportTop = cellRect.top - rect.height;
+      desiredViewportTop = cellRect.top - rect.height;
       if (desiredViewportTop < margin) {
         desiredViewportTop = margin;
       }
@@ -426,15 +442,13 @@ function adjustMorePopover(): void {
       }
     } else {
       // Pop downward: place popover below the cell's date header
-      const maxWholeHeight = window.innerHeight - (cellRect.top + headerHeight) - margin;
-      const estimatedNonBody = 50;
-      body.style.maxHeight = `${Math.max(120, maxWholeHeight - estimatedNonBody)}px`;
+      body.style.maxHeight = `${Math.max(120, spaceBelow - estimatedNonBody)}px`;
       
       // Force layout reflow so the browser applies style changes before querying size
-      const _reflow = popover.offsetHeight;
+      const _reflow2 = popover.offsetHeight;
       const rect = popover.getBoundingClientRect();
       
-      let desiredViewportTop = cellRect.top + headerHeight;
+      desiredViewportTop = cellRect.top + headerHeight;
       if (desiredViewportTop + rect.height > window.innerHeight - margin) {
         desiredViewportTop = Math.max(margin, window.innerHeight - rect.height - margin);
       }
@@ -2093,6 +2107,18 @@ async function boot(): Promise<void> {
     }
   });
   calendar.render();
+
+  const popoverObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node instanceof HTMLElement && (node.classList.contains("fc-popover") || node.querySelector(".fc-popover"))) {
+          adjustMorePopover();
+        }
+      }
+    }
+  });
+  popoverObserver.observe(document.body, { childList: true, subtree: true });
+
   syncToolbar(root);
   scheduleSyncCalendarScrollbars();
 
@@ -2239,7 +2265,10 @@ async function boot(): Promise<void> {
     showError(new Error("无法读取日程数据，请在思源中打开"));
   }
   store.startAutoRefresh(30000);
-  window.addEventListener("beforeunload", () => window.clearInterval(panelCurrentTimer));
+  window.addEventListener("beforeunload", () => {
+    window.clearInterval(panelCurrentTimer);
+    popoverObserver.disconnect();
+  });
 }
 
 async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
