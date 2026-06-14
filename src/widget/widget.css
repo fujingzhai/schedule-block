@@ -1133,6 +1133,7 @@ body .fc-popover {
   max-height: min(70vh, 430px);
   display: flex;
   flex-direction: column;
+  z-index: 2000 !important;
 }
 
 body .fc-popover-header {

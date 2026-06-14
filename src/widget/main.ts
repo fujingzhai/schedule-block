@@ -409,14 +409,17 @@ function adjustMorePopover(): void {
       const estimatedNonBody = 50; 
       body.style.maxHeight = `${Math.max(120, maxWholeHeight - estimatedNonBody)}px`;
       
+      // Force layout reflow so the browser applies style changes before querying size
+      const _reflow = popover.offsetHeight;
       const rect = popover.getBoundingClientRect();
+      
       let desiredViewportTop = cellRect.top - rect.height;
       if (desiredViewportTop < margin) {
         desiredViewportTop = margin;
       }
       
       const topDelta = desiredViewportTop - rect.top;
-      if (Math.abs(topDelta) > 1) {
+      if (Math.abs(topDelta) > 0.5) {
         const currentTop = Number.parseFloat(popover.style.top || "0");
         const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
         popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
@@ -427,14 +430,17 @@ function adjustMorePopover(): void {
       const estimatedNonBody = 50;
       body.style.maxHeight = `${Math.max(120, maxWholeHeight - estimatedNonBody)}px`;
       
+      // Force layout reflow so the browser applies style changes before querying size
+      const _reflow = popover.offsetHeight;
       const rect = popover.getBoundingClientRect();
+      
       let desiredViewportTop = cellRect.top + headerHeight;
       if (desiredViewportTop + rect.height > window.innerHeight - margin) {
         desiredViewportTop = Math.max(margin, window.innerHeight - rect.height - margin);
       }
       
       const topDelta = desiredViewportTop - rect.top;
-      if (Math.abs(topDelta) > 1) {
+      if (Math.abs(topDelta) > 0.5) {
         const currentTop = Number.parseFloat(popover.style.top || "0");
         const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
         popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
@@ -450,7 +456,7 @@ function adjustMorePopover(): void {
     let desiredViewportTop = Math.min(Math.max(rect.top, margin), maxViewportTop);
     
     const topDelta = desiredViewportTop - rect.top;
-    if (Math.abs(topDelta) > 1) {
+    if (Math.abs(topDelta) > 0.5) {
       const currentTop = Number.parseFloat(popover.style.top || "0");
       const baseTop = Number.isFinite(currentTop) ? currentTop : 0;
       popover.style.top = `${Math.max(0, baseTop + topDelta)}px`;
@@ -462,7 +468,7 @@ function adjustMorePopover(): void {
   const maxViewportLeft = Math.max(margin, window.innerWidth - nextRect.width - margin);
   const desiredViewportLeft = Math.min(Math.max(nextRect.left, margin), maxViewportLeft);
   const leftDelta = desiredViewportLeft - nextRect.left;
-  if (Math.abs(leftDelta) > 1) {
+  if (Math.abs(leftDelta) > 0.5) {
     const currentLeft = Number.parseFloat(popover.style.left || "0");
     const baseLeft = Number.isFinite(currentLeft) ? currentLeft : 0;
     popover.style.left = `${Math.max(0, baseLeft + leftDelta)}px`;
