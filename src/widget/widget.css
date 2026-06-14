@@ -1673,7 +1673,33 @@ body:has(.cb-quickadd-backdrop) .cb-popover {
 
 /* ---------- 截图 ---------- */
 body.cb-screenshot-capturing {
-  overflow: visible;
+  overflow: visible !important;
+  height: auto !important;
+}
+
+body.cb-screenshot-capturing #app {
+  height: auto !important;
+  overflow: visible !important;
+}
+
+body.cb-screenshot-capturing .cb-calendar {
+  height: auto !important;
+  overflow: visible !important;
+}
+
+body.cb-screenshot-capturing .fc-scroller {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+body.cb-screenshot-capturing .fc-scroller-harness {
+  height: auto !important;
+  overflow: visible !important;
+}
+
+body.cb-screenshot-capturing .fc-scrollgrid {
+  height: auto !important;
 }
 
 body.cb-screenshot-capturing .cb-toolbar-left,

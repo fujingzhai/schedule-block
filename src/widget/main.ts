@@ -2306,6 +2306,7 @@ async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
     await saveScreenshotBlob(blob, screenshotFileName());
   } finally {
     document.body.classList.remove("cb-screenshot-capturing");
+    calendar.updateSize();
     button.disabled = false;
     button.title = previousTitle;
   }
