@@ -1,17 +1,12 @@
 import { readWorkspaceFile, writeWorkspaceFile } from "./api";
 
-/** 谷歌日历风格的默认取色板（去掉与主题重复的石墨灰 #616161） */
+/** Notion 风格的低饱和默认取色板，保持事件色块可读但不过亮 */
 export const DEFAULT_PALETTE = [
-  "#d50000", // 番茄红
-  "#e67c73", // 火鹤红
-  "#f4511e", // 橘子橙
-  "#f6bf26", // 香蕉黄
-  "#33b679", // 鼠尾草绿
-  "#0b8043", // 罗勒绿
-  "#039be5", // 孔雀蓝
-  "#3f51b5", // 蓝莓
-  "#7986cb", // 薰衣草
-  "#8e24aa" // 葡萄紫
+  "#548164", // 绿
+  "#487ca5", // 蓝
+  "#c4554d", // 红
+  "#c29343", // 黄
+  "#8a67ab" // 紫
 ];
 
 const FILE = "/data/storage/schedule-block/palette.json";

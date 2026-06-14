@@ -1,4 +1,4 @@
-import { Menu, Plugin, Protyle, fetchPost, getActiveEditor, getAllEditor, showMessage } from "siyuan";
+import { Dialog, Menu, Plugin, Protyle, fetchPost, getActiveEditor, getAllEditor, showMessage } from "siyuan";
 import { fmtDate, parseDateFromTitle } from "../shared/date";
 
 type ViewKey = "day" | "week";
@@ -39,8 +39,7 @@ interface InsertContext {
 export default class CalendarBlockPlugin extends Plugin {
   private topBarElement?: HTMLElement;
   private lastContext: InsertContext = { blockID: "", docID: "" };
-  private quickOverlay: HTMLElement | null = null;
-  private quickFrame: HTMLIFrameElement | null = null;
+  private quickDialog: Dialog | null = null;
   private uiChannel: BroadcastChannel | null = null;
 
   onload() {
@@ -106,42 +105,32 @@ export default class CalendarBlockPlugin extends Plugin {
 
   private openQuickAdd() {
     this.closeQuickAdd();
-    const overlay = document.createElement("div");
-    overlay.style.cssText = [
-      "position:fixed",
-      "inset:0",
-      "z-index:9999",
-      "background:rgba(0,0,0,0.18)",
-      "backdrop-filter:blur(8px)",
-      "-webkit-backdrop-filter:blur(8px)"
-    ].join(";");
-    document.body.appendChild(overlay);
+    this.quickDialog = new Dialog({
+      title: "",
+      content: `<iframe src="/plugins/schedule-block/widget/index.html?view=quickadd"
+        style="width:100%;height:380px;border:0;display:block;background:transparent;" allowfullscreen></iframe>`,
+      width: "374px",
+      destroyCallback: () => {
+        this.quickDialog = null;
+      }
+    });
 
-    const frame = document.createElement("iframe");
-    frame.src = "/plugins/schedule-block/widget/index.html?view=quickadd";
-    frame.setAttribute("allowfullscreen", "true");
-    frame.style.cssText = [
-      "position:fixed",
-      "inset:0",
-      "width:100vw",
-      "height:100vh",
-      "border:0",
-      "z-index:10000",
-      "background:transparent"
-    ].join(";");
-    document.body.appendChild(frame);
-    this.quickOverlay = overlay;
-    this.quickFrame = frame;
+    const container = this.quickDialog.element.querySelector(".b3-dialog__container") as HTMLElement;
+    if (container) {
+      container.style.boxShadow = "none";
+      container.style.border = "none";
+      container.style.background = "transparent";
+    }
+    const content = this.quickDialog.element.querySelector(".b3-dialog__content") as HTMLElement;
+    if (content) {
+      content.style.padding = "0";
+    }
   }
 
   private closeQuickAdd() {
-    if (this.quickFrame) {
-      this.quickFrame.remove();
-      this.quickFrame = null;
-    }
-    if (this.quickOverlay) {
-      this.quickOverlay.remove();
-      this.quickOverlay = null;
+    if (this.quickDialog) {
+      this.quickDialog.destroy();
+      this.quickDialog = null;
     }
   }
 
