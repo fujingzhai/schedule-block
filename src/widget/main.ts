@@ -59,6 +59,8 @@ const SNAP_MINUTES = 15;
 const store = new EventStore();
 const weatherStore = new WeatherStore();
 let calendar: Calendar;
+/** 事件 id → 当前已渲染的 DOM 元素，用于颜色等即时改动时直接更新（setProp 不会重跑 eventDidMount） */
+const eventEls = new Map<string, HTMLElement>();
 let blockId = "";
 let docId = "";
 let anchorDate = "";
@@ -287,6 +289,27 @@ function applyEventColor(event: EventApi, color: string): void {
   event.setProp("backgroundColor", color);
   event.setProp("borderColor", "transparent");
   event.setProp("textColor", textColorFor(color));
+  // 事件块可见配色来自 CSS 变量，而 setProp 不会重跑 eventDidMount，
+  // 因此必须直接把新配色写到当前已渲染的元素上，颜色才会即时变化。
+  const el = eventEls.get(event.id);
+  if (el) {
+    applyEventColorVars(el, color);
+  }
+}
+
+/** 把某个配色对应的 CSS 变量写到事件块元素上（widget.css 用这些变量+!important 决定可见色） */
+function applyEventColorVars(el: HTMLElement, color: string): void {
+  const isDark = document.documentElement.getAttribute("data-theme-mode") === "dark";
+  const themeBgVar = getComputedStyle(document.documentElement).getPropertyValue("--b3-theme-background").trim();
+  const themeBg = themeBgVar || (isDark ? "#1b1b1f" : "#ffffff");
+  const themeOnBgVar = getComputedStyle(document.documentElement).getPropertyValue("--b3-theme-on-background").trim();
+  const themeOnBg = themeOnBgVar || (isDark ? "#ffffff" : "#1f2329");
+  const bgWeight = isDark ? 0.16 : 0.12;
+  const hoverWeight = isDark ? 0.25 : 0.20;
+  el.style.setProperty("--cb-event-color", color);
+  el.style.setProperty("--cb-event-bg-color", mixColors(color, themeBg, bgWeight));
+  el.style.setProperty("--cb-event-hover-bg-color", mixColors(color, themeBg, hoverWeight));
+  el.style.setProperty("--cb-event-text-color", themeOnBg);
 }
 
 function applyValuesToEvent(event: EventApi, values: PopoverValues): void {
@@ -414,24 +437,16 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
 
 function onEventDidMount(arg: EventMountArg): void {
   const color = String(arg.event.backgroundColor || lastColor());
-  
-  const isDark = document.documentElement.getAttribute("data-theme-mode") === "dark";
-  const themeBgVar = getComputedStyle(document.documentElement).getPropertyValue("--b3-theme-background").trim();
-  const themeBg = themeBgVar || (isDark ? "#1b1b1f" : "#ffffff");
-  const themeOnBgVar = getComputedStyle(document.documentElement).getPropertyValue("--b3-theme-on-background").trim();
-  const themeOnBg = themeOnBgVar || (isDark ? "#ffffff" : "#1f2329");
-  
-  const bgWeight = isDark ? 0.16 : 0.12;
-  const hoverWeight = isDark ? 0.25 : 0.20;
-  const bgColor = mixColors(color, themeBg, bgWeight);
-  const hoverBgColor = mixColors(color, themeBg, hoverWeight);
-  
-  arg.el.style.setProperty("--cb-event-color", color);
-  arg.el.style.setProperty("--cb-event-bg-color", bgColor);
-  arg.el.style.setProperty("--cb-event-hover-bg-color", hoverBgColor);
-  arg.el.style.setProperty("--cb-event-text-color", themeOnBg);
-  
+  applyEventColorVars(arg.el, color);
+  eventEls.set(arg.event.id, arg.el);
   scheduleAdjustEventDuration(arg.el);
+}
+
+function onEventWillUnmount(arg: EventMountArg): void {
+  // 仅当映射仍指向这个元素时才删除，避免误删重渲染后已替换的新元素
+  if (eventEls.get(arg.event.id) === arg.el) {
+    eventEls.delete(arg.event.id);
+  }
 }
 
 function scheduleAdjustEventDuration(el: HTMLElement): void {
@@ -645,6 +660,29 @@ function refresh(): void {
   scheduleSyncCalendarScrollbars();
 }
 
+/** 该事件在当前文档归属与颜色筛选下是否应显示在日历上 */
+function isCalendarEventVisible(ev: CalEvent): boolean {
+  if (!store.visibleEvents().some((e) => e.id === ev.id)) {
+    return false;
+  }
+  return isColorFilterAll() || visibleColors.has(ev.color);
+}
+
+/**
+ * 仅增量同步单个事件到日历视图：移除旧节点后按需重新加入。
+ * 用于新建/编辑/删除/勾选等单事件改动，避免 refetchEvents() 整表重建
+ * 导致所有事件块同时重绘而闪烁。
+ */
+function syncCalendarEvent(id: string): void {
+  calendar.getEventById(id)?.remove();
+  const ev = store.get(id);
+  if (ev && isCalendarEventVisible(ev)) {
+    const [source] = calendar.getEventSources();
+    calendar.addEvent(toFC(ev), source ?? undefined);
+  }
+  scheduleSyncCalendarScrollbars();
+}
+
 function scheduleSyncCalendarScrollbars(): void {
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
@@ -741,7 +779,7 @@ async function toggleTodoDone(id: string): Promise<void> {
     return;
   }
   await store.update(id, { done: !Boolean(stored.done) });
-  refresh();
+  syncCalendarEvent(id);
 }
 
 /* ---------- 交互回调 ---------- */
@@ -795,7 +833,7 @@ function onSelect(info: DateSelectArg): void {
         allDay: range.allDay,
         color: v.color,
         note: v.note,
-        docId: docId,
+        docId: "",
         isTodo: v.isTodo,
         done: false
       });
@@ -813,7 +851,7 @@ function onSelect(info: DateSelectArg): void {
     }
     if (close) {
       draft?.remove();
-      refresh();
+      syncCalendarEvent(draftSavedId);
     }
   };
   const queueDraftSave = (v: PopoverValues) => {
@@ -857,7 +895,7 @@ function onSelect(info: DateSelectArg): void {
       window.clearTimeout(draftSaveTimer);
       draft?.remove();
       if (draftSavedId) {
-        store.remove(draftSavedId).then(refresh).catch(showError);
+        store.remove(draftSavedId).then(() => syncCalendarEvent(draftSavedId)).catch(showError);
       }
       suppressUntil = Date.now() + 250;
     }
@@ -966,12 +1004,12 @@ function onEventClick(info: EventClickArg): void {
     onSave: async (v) => {
       window.clearTimeout(editSaveTimer);
       await persistEdit(v).catch(showError);
-      refresh();
+      syncCalendarEvent(stored.id);
     },
     onDelete: async () => {
       window.clearTimeout(editSaveTimer);
       await store.remove(stored.id);
-      refresh();
+      syncCalendarEvent(stored.id);
     },
     onClose: () => {
       window.clearTimeout(editSaveTimer);
@@ -995,7 +1033,7 @@ function onEventClick(info: EventClickArg): void {
           note: original.note,
           isTodo: Boolean(original.isTodo),
           done: Boolean(original.done)
-        }).then(refresh).catch(showError);
+        }).then(() => syncCalendarEvent(stored.id)).catch(showError);
       } else {
         info.event.setProp("title", original.title);
         applyEventColor(info.event, original.color);
@@ -1736,8 +1774,10 @@ function openCreatePopover(opts: {
   anchor: { x: number; y: number; rect?: DOMRect };
   ignoreOutside?: HTMLElement[];
   docId: string;
-  onDone?(result: { values: PopoverValues; range: { start: string; end: string; allDay: boolean } }): void;
-  onCancelSaved?(): void;
+  /** 在日历上显示实时预览草稿块（标题/颜色/时间随弹窗即时变化）；快捷添加等无日历场景应留空 */
+  liveDraft?: boolean;
+  onDone?(result: { values: PopoverValues; range: { start: string; end: string; allDay: boolean }; id: string }): void;
+  onCancelSaved?(id: string): void;
   onCancel?(): void;
 }): void {
   const values = defaultCreateValues();
@@ -1745,6 +1785,27 @@ function openCreatePopover(opts: {
   let interacted = false;
   let latestValues = values;
   let saveTimer = 0;
+  // 实时预览草稿块：弹窗里改标题/颜色/时间时，日历上即时跟随，保存后再换成正式事件
+  let draft: EventApi | null = null;
+  if (opts.liveDraft) {
+    const range0 = valuesToRange(values);
+    draft = calendar.addEvent({
+      id: `draft-${Date.now().toString(36)}`,
+      title: values.title || "（无标题）",
+      start: range0.start,
+      end: range0.end,
+      allDay: range0.allDay,
+      backgroundColor: values.color,
+      borderColor: "transparent",
+      textColor: textColorFor(values.color),
+      editable: false,
+      classNames: ["cb-event-draft"]
+    });
+  }
+  const removeDraft = () => {
+    draft?.remove();
+    draft = null;
+  };
   const persistNew = async (v: PopoverValues, close = false) => {
     interacted = true;
     latestValues = v;
@@ -1760,7 +1821,7 @@ function openCreatePopover(opts: {
         allDay: range.allDay,
         color: v.color,
         note: v.note,
-        docId: opts.docId,
+        docId: "",
         isTodo: v.isTodo,
         done: false
       });
@@ -1777,7 +1838,7 @@ function openCreatePopover(opts: {
       });
     }
     if (close) {
-      opts.onDone?.({ values: v, range });
+      opts.onDone?.({ values: v, range, id: savedId });
     }
   };
 
@@ -1786,9 +1847,20 @@ function openCreatePopover(opts: {
     anchor: opts.anchor,
     ignoreOutside: opts.ignoreOutside,
     values,
+    onTitleChange: (title) => {
+      draft?.setProp("title", title);
+    },
+    onColorChange: (color) => {
+      if (draft) {
+        applyEventColor(draft, color);
+      }
+    },
     onValuesChange: (v) => {
       interacted = true;
       latestValues = v;
+      if (draft) {
+        applyValuesToEvent(draft, v);
+      }
       window.clearTimeout(saveTimer);
       saveTimer = window.setTimeout(() => {
         persistNew(latestValues).catch(showError);
@@ -1797,22 +1869,27 @@ function openCreatePopover(opts: {
     onSave: async (v) => {
       toolbarCreatePopoverOpen = false;
       window.clearTimeout(saveTimer);
+      // 先让正式事件块就位（onDone→syncCalendarEvent），再撤掉草稿，避免该块出现空档闪烁
       await persistNew(v, true).catch(showError);
+      removeDraft();
     },
     onClose: () => {
       toolbarCreatePopoverOpen = false;
       window.clearTimeout(saveTimer);
       if (interacted) {
-        persistNew(latestValues, true).catch(showError);
+        persistNew(latestValues, true).catch(showError).finally(removeDraft);
       } else {
+        removeDraft();
         opts.onCancel?.();
       }
     },
     onCancel: () => {
       toolbarCreatePopoverOpen = false;
       window.clearTimeout(saveTimer);
+      removeDraft();
+      const removedId = savedId;
       const afterCancel = () => {
-        opts.onCancelSaved?.();
+        opts.onCancelSaved?.(removedId);
         opts.onCancel?.();
       };
       if (savedId) {
@@ -1902,12 +1979,13 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
       anchor: { x: rect.left, y: rect.bottom + 6, rect },
       ignoreOutside: [target],
       docId: docId,
-      onDone: ({ range }) => {
-        refresh();
+      liveDraft: true,
+      onDone: ({ range, id }) => {
         calendar.gotoDate(range.start);
+        syncCalendarEvent(id);
       },
-      onCancelSaved: () => {
-        refresh();
+      onCancelSaved: (id) => {
+        syncCalendarEvent(id);
       }
     });
     toolbarCreatePopoverOpen = true;
@@ -2174,6 +2252,7 @@ async function boot(): Promise<void> {
     eventClassNames,
     eventContent: renderEventContent,
     eventDidMount: onEventDidMount,
+    eventWillUnmount: onEventWillUnmount,
     select: onSelect,
     dateClick: onDateClick,
     eventClick: onEventClick,

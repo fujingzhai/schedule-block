@@ -104,12 +104,9 @@ export class EventStore {
     return this.events.find((e) => e.id === id);
   }
 
-  /** 正常嵌入文档时显示所属文档日程；空 docId 为历史全局事件，必须兼容显示。 */
+  /** 全局共享日历：所有日程块（面板与任意文档内的嵌入块）都显示全部事件，不按文档隔离。 */
   visibleEvents(): CalEvent[] {
-    if (!this.docId) {
-      return this.events;
-    }
-    return this.events.filter((e) => !e.docId || e.docId === this.docId);
+    return this.events;
   }
 
   canUndo(): boolean {
@@ -131,10 +128,6 @@ export class EventStore {
   async add(event: CalEvent): Promise<void> {
     this.ensureWritable();
     this.snapshot();
-    // 自动补上当前文档 docId
-    if (!event.docId && this.docId) {
-      event.docId = this.docId;
-    }
     this.events.push(event);
     await this.persist();
   }
@@ -146,10 +139,6 @@ export class EventStore {
       return;
     }
     this.snapshot();
-    // 若旧事件没有 docId，编辑时自动分配当前文档
-    if (!event.docId && this.docId) {
-      event.docId = this.docId;
-    }
     Object.assign(event, patch);
     await this.persist();
   }
