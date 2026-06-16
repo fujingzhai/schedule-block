@@ -73,6 +73,9 @@ let colorFilterPicker: { el: HTMLElement; dispose(): void } | null = null;
 let noteTooltip: HTMLElement | null = null;
 let noteTooltipDispose: (() => void) | null = null;
 const visibleColors = new Set<string>(getPalette());
+let searchKeyword = "";
+let searchOpen = false;
+let searchComposing = false;
 /** 齿轮设置里颜色管理列表的重渲染回调（设置弹窗打开时有效） */
 let colorManagerRerender: (() => void) | null = null;
 let toolbarCreatePopoverOpen = false;
@@ -581,17 +584,45 @@ function isColorFilterAll(): boolean {
 }
 
 function visibleFilteredEvents(): CalEvent[] {
-  const events = store.visibleEvents();
-  if (isColorFilterAll()) {
+  let events = store.visibleEvents();
+  if (!isColorFilterAll()) {
+    events = events.filter((event) => visibleColors.has(event.color));
+  }
+  const kw = searchKeyword.trim().toLowerCase();
+  if (!kw) {
     return events;
   }
-  return events.filter((event) => visibleColors.has(event.color));
+  return events.filter((event) => eventMatchesKeyword(event, kw));
+}
+
+function eventMatchesKeyword(event: CalEvent, keyword: string): boolean {
+  const haystack = `${event.title || ""}\n${event.note || ""}`.toLowerCase();
+  return haystack.includes(keyword);
 }
 
 function syncColorFilterButton(root: HTMLElement): void {
   const btn = root.querySelector(".cb-btn-filter") as HTMLElement | null;
   if (btn) {
     btn.classList.toggle("cb-icon-btn--active", !isColorFilterAll());
+  }
+}
+
+function syncSearchButton(root: HTMLElement): void {
+  const btn = root.querySelector(".cb-btn-search") as HTMLElement | null;
+  if (btn) {
+    btn.classList.toggle("cb-icon-btn--active", searchOpen || Boolean(searchKeyword.trim()));
+  }
+  const box = root.querySelector(".cb-toolbar-search") as HTMLElement | null;
+  if (box) {
+    box.classList.toggle("cb-toolbar-search--open", searchOpen || Boolean(searchKeyword.trim()));
+  }
+  const input = root.querySelector(".cb-search-input") as HTMLInputElement | null;
+  if (input && input.value !== searchKeyword) {
+    input.value = searchKeyword;
+  }
+  const clearBtn = root.querySelector(".cb-search-clear") as HTMLButtonElement | null;
+  if (clearBtn) {
+    clearBtn.hidden = !searchKeyword.trim();
   }
 }
 
@@ -665,7 +696,8 @@ function isCalendarEventVisible(ev: CalEvent): boolean {
   if (!store.visibleEvents().some((e) => e.id === ev.id)) {
     return false;
   }
-  return isColorFilterAll() || visibleColors.has(ev.color);
+  const kw = searchKeyword.trim().toLowerCase();
+  return (isColorFilterAll() || visibleColors.has(ev.color)) && (!kw || eventMatchesKeyword(ev, kw));
 }
 
 /**
@@ -1361,6 +1393,7 @@ function openColorFilterPicker(anchor: HTMLElement): void {
   closePopover(true);
   closeAnchorEditor();
   closeWeatherPicker();
+  collapseSearchFromDocument();
   const el = document.createElement("div");
   el.className = "cb-filter-picker";
   el.setAttribute("role", "dialog");
@@ -1439,6 +1472,45 @@ function openColorFilterPicker(anchor: HTMLElement): void {
   el.style.top = `${y}px`;
 }
 
+function openSearchInline(root: HTMLElement): void {
+  closePopover(true);
+  closeAnchorEditor();
+  closeWeatherPicker();
+  closeColorFilterPicker();
+  searchOpen = true;
+  syncSearchButton(root);
+  const input = root.querySelector(".cb-search-input") as HTMLInputElement | null;
+  window.setTimeout(() => input?.focus(), 0);
+}
+
+function collapseSearchInline(root: HTMLElement): void {
+  if (searchKeyword.trim()) {
+    return;
+  }
+  searchOpen = false;
+  searchComposing = false;
+  syncSearchButton(root);
+}
+
+function collapseSearchFromDocument(): void {
+  const root = document.getElementById("app");
+  if (root) {
+    collapseSearchInline(root);
+  }
+}
+
+function applySearchKeyword(root: HTMLElement, value: string): void {
+  searchKeyword = value;
+  syncSearchButton(root);
+  refresh();
+}
+
+function clearSearchKeyword(root: HTMLElement): void {
+  applySearchKeyword(root, "");
+  const input = root.querySelector(".cb-search-input") as HTMLInputElement | null;
+  input?.focus();
+}
+
 function refreshWeatherHeaders(): void {
   document.querySelectorAll<HTMLElement>(".cb-weather-btn[data-date]").forEach((btn) => {
     const date = btn.dataset.date || "";
@@ -1461,6 +1533,7 @@ function openWeatherPicker(anchor: HTMLElement, date: string): void {
   closeAnchorEditor();
   closeWeatherPicker();
   closeColorFilterPicker();
+  collapseSearchFromDocument();
   const current = weatherStore.get(date) || "";
   const el = document.createElement("div");
   el.className = "cb-weather-picker";
@@ -1545,6 +1618,7 @@ function editAnchorDate(anchor: HTMLElement): void {
   closeAnchorEditor();
   closeWeatherPicker();
   closeColorFilterPicker();
+  collapseSearchFromDocument();
   const view = currentViewKey();
   const current = anchorLabel(view);
 
@@ -1672,6 +1746,7 @@ function openPanelSettings(anchor: HTMLElement): void {
   closeAnchorEditor();
   closeWeatherPicker();
   closeColorFilterPicker();
+  collapseSearchFromDocument();
   const view = currentViewKey();
   const el = document.createElement("div");
   el.className = "cb-anchor-editor cb-panel-settings";
@@ -1907,6 +1982,7 @@ function switchPanelView(view: ViewKey, date?: Date | string): void {
   }
   closeAnchorEditor();
   closeColorFilterPicker();
+  collapseSearchFromDocument();
   closeWeatherPicker();
   closePopover(true);
   toolbarCreatePopoverOpen = false;
@@ -1943,6 +2019,17 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
         </button>
       </div>
       <div class="cb-toolbar-right">
+        <div class="cb-toolbar-search">
+          <div class="cb-search-field">
+            <input class="cb-search-input" type="text" placeholder="标题 / 备注" autocomplete="off">
+            <button type="button" class="cb-search-clear" aria-label="清空搜索" title="清空搜索" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M7 7l10 10M17 7 7 17"/></svg>
+            </button>
+          </div>
+          <button type="button" class="cb-icon-btn cb-btn-search" aria-label="搜索当前日程视图" title="搜索当前日程视图">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="m20 20-4.4-4.4"/><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </button>
+        </div>
         <button type="button" class="cb-icon-btn cb-btn-new" aria-label="新建日程" title="新建日程">＋</button>
       </div>
     </div>
@@ -1959,6 +2046,40 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
   root.querySelector(".cb-btn-filter")!.addEventListener("click", (event) => {
     openColorFilterPicker(event.currentTarget as HTMLElement);
   });
+  root.querySelector(".cb-btn-search")!.addEventListener("click", (event) => {
+    openSearchInline(root);
+  });
+  const searchInput = root.querySelector(".cb-search-input") as HTMLInputElement;
+  const searchClear = root.querySelector(".cb-search-clear") as HTMLButtonElement;
+  searchInput.value = searchKeyword;
+  searchInput.addEventListener("compositionstart", () => {
+    searchComposing = true;
+  });
+  searchInput.addEventListener("compositionend", () => {
+    searchComposing = false;
+    applySearchKeyword(root, searchInput.value);
+  });
+  searchInput.addEventListener("input", (event) => {
+    if (searchComposing || (event as InputEvent).isComposing) {
+      return;
+    }
+    applySearchKeyword(root, searchInput.value);
+  });
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+    event.preventDefault();
+    if (searchInput.value) {
+      clearSearchKeyword(root);
+      return;
+    }
+    searchOpen = false;
+    searchInput.blur();
+    syncSearchButton(root);
+  });
+  searchInput.addEventListener("blur", () => collapseSearchInline(root));
+  searchClear.addEventListener("click", () => clearSearchKeyword(root));
   root.querySelector(".cb-btn-anchor")!.addEventListener("click", () => {
     if (panelMode) {
       gotoPanelCurrentAnchor();
@@ -1973,6 +2094,7 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
       closePopover();
       return;
     }
+    collapseSearchFromDocument();
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
     openCreatePopover({
@@ -1991,6 +2113,7 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
     toolbarCreatePopoverOpen = true;
   });
   syncColorFilterButton(root);
+  syncSearchButton(root);
 }
 
 function syncToolbar(root: HTMLElement): void {
@@ -2444,6 +2567,7 @@ async function boot(): Promise<void> {
 async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
   closePopover(true);
   closeColorFilterPicker();
+  collapseSearchFromDocument();
   closeWeatherPicker();
   hideEventNoteTooltip();
 
