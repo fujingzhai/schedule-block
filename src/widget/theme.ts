@@ -22,7 +22,7 @@ const VARS = [
   "--b3-dialog-shadow"
 ];
 
-export function initThemeBridge(): void {
+export function initThemeBridge(onSync?: () => void): void {
   let parentDoc: Document | null = null;
   try {
     parentDoc = window.parent !== window ? window.parent.document : null;
@@ -49,6 +49,7 @@ export function initThemeBridge(): void {
     if (mode) {
       document.documentElement.setAttribute("data-theme-mode", mode);
     }
+    onSync?.();
   };
 
   sync();

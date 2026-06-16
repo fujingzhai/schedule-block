@@ -83,6 +83,7 @@ let panelMode = false;
 let panelCurrentAnchor = fmtDate(new Date());
 let lastClickedMoreLink: HTMLElement | null = null;
 let interactionPrimeRaf = 0;
+let eventColorRefreshTimer = 0;
 
 function lastColor(): string {
   try {
@@ -313,6 +314,18 @@ function applyEventColorVars(el: HTMLElement, color: string): void {
   el.style.setProperty("--cb-event-bg-color", mixColors(color, themeBg, bgWeight));
   el.style.setProperty("--cb-event-hover-bg-color", mixColors(color, themeBg, hoverWeight));
   el.style.setProperty("--cb-event-text-color", themeOnBg);
+}
+
+function refreshRenderedEventColors(): void {
+  window.clearTimeout(eventColorRefreshTimer);
+  eventColorRefreshTimer = window.setTimeout(() => {
+    for (const [eventId, el] of eventEls) {
+      const event = calendar?.getEventById(eventId);
+      const color = String(event?.backgroundColor || el.style.getPropertyValue("--cb-event-color") || lastColor());
+      applyEventColorVars(el, color);
+      scheduleAdjustEventDuration(el);
+    }
+  }, 0);
 }
 
 function applyValuesToEvent(event: EventApi, values: PopoverValues): void {
@@ -2203,7 +2216,7 @@ function primeCalendarInteraction(target: EventTarget | null = null): void {
 /* ---------- 启动 ---------- */
 
 async function boot(): Promise<void> {
-  initThemeBridge();
+  initThemeBridge(refreshRenderedEventColors);
 
   const params = new URLSearchParams(window.location.search);
   panelMode = params.get("mode") === "panel";
@@ -2390,6 +2403,7 @@ async function boot(): Promise<void> {
     }
   });
   calendar.render();
+  refreshRenderedEventColors();
 
   const popoverObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
