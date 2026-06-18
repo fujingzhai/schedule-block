@@ -59,8 +59,8 @@ const SNAP_MINUTES = 15;
 const store = new EventStore();
 const weatherStore = new WeatherStore();
 let calendar: Calendar;
-/** 事件 id → 当前已渲染的 DOM 元素，用于颜色等即时改动时直接更新（setProp 不会重跑 eventDidMount） */
-const eventEls = new Map<string, HTMLElement>();
+/** 事件 id → 当前已渲染的全部 DOM 片段；跨日事件会被 FullCalendar 拆成多个片段 */
+const eventEls = new Map<string, Set<HTMLElement>>();
 let blockId = "";
 let docId = "";
 let anchorDate = "";
@@ -295,9 +295,11 @@ function applyEventColor(event: EventApi, color: string): void {
   event.setProp("textColor", textColorFor(color));
   // 事件块可见配色来自 CSS 变量，而 setProp 不会重跑 eventDidMount，
   // 因此必须直接把新配色写到当前已渲染的元素上，颜色才会即时变化。
-  const el = eventEls.get(event.id);
-  if (el) {
-    applyEventColorVars(el, color);
+  const els = eventEls.get(event.id);
+  if (els) {
+    for (const el of els) {
+      applyEventColorVars(el, color);
+    }
   }
 }
 
@@ -319,11 +321,13 @@ function applyEventColorVars(el: HTMLElement, color: string): void {
 function refreshRenderedEventColors(): void {
   window.clearTimeout(eventColorRefreshTimer);
   eventColorRefreshTimer = window.setTimeout(() => {
-    for (const [eventId, el] of eventEls) {
+    for (const [eventId, els] of eventEls) {
       const event = calendar?.getEventById(eventId);
-      const color = String(event?.backgroundColor || el.style.getPropertyValue("--cb-event-color") || lastColor());
-      applyEventColorVars(el, color);
-      scheduleAdjustEventDuration(el);
+      for (const el of els) {
+        const color = String(event?.backgroundColor || el.style.getPropertyValue("--cb-event-color") || lastColor());
+        applyEventColorVars(el, color);
+        scheduleAdjustEventDuration(el);
+      }
     }
   }, 0);
 }
@@ -454,13 +458,22 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
 function onEventDidMount(arg: EventMountArg): void {
   const color = String(arg.event.backgroundColor || lastColor());
   applyEventColorVars(arg.el, color);
-  eventEls.set(arg.event.id, arg.el);
+  let els = eventEls.get(arg.event.id);
+  if (!els) {
+    els = new Set<HTMLElement>();
+    eventEls.set(arg.event.id, els);
+  }
+  els.add(arg.el);
   scheduleAdjustEventDuration(arg.el);
 }
 
 function onEventWillUnmount(arg: EventMountArg): void {
-  // 仅当映射仍指向这个元素时才删除，避免误删重渲染后已替换的新元素
-  if (eventEls.get(arg.event.id) === arg.el) {
+  const els = eventEls.get(arg.event.id);
+  if (!els) {
+    return;
+  }
+  els.delete(arg.el);
+  if (els.size === 0) {
     eventEls.delete(arg.event.id);
   }
 }
