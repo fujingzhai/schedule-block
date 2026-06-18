@@ -1062,14 +1062,6 @@ body:not([data-mode="panel"]) .cb-calendar.fc .cb-month-event-marker {
   width: 100%;
 }
 
-.cb-allday-event-marker {
-  flex: 0 0 auto;
-  width: 3px;
-  height: 13px;
-  margin-top: 1px;
-  border-radius: 2px;
-}
-
 .cb-event-body {
   display: flex;
   flex-direction: column;
@@ -1794,4 +1786,8 @@ body.cb-quickadd-mode .cb-popover {
   background: transparent !important;
   margin: 0 !important;
   padding: 14px 16px 12px !important;
+}
+
+body.cb-quickadd-mode .cb-pop-footer {
+  margin-top: 0;
 }

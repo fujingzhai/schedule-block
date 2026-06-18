@@ -129,7 +129,7 @@ export default class CalendarBlockPlugin extends Plugin {
     this.quickDialog = new Dialog({
       title: "",
       content: `<iframe src="/plugins/schedule-block/widget/index.html?view=quickadd"
-        style="width:100%;height:380px;border:0;display:block;border-radius:8px;" allowfullscreen></iframe>`,
+        style="width:100%;height:326px;border:0;display:block;border-radius:8px;" allowfullscreen></iframe>`,
       width: "374px",
       destroyCallback: () => {
         this.quickDialog = null;

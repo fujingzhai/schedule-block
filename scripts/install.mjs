@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const dataDir = process.env.SIYUAN_DATA_DIR || resolve(homedir(), "siyuan/data");
-const backupRoot = resolve(root, ".tmp/install-backups");
+const backupRoot = resolve(homedir(), "AI-Space/.tmp/schedule-block/install-backups");
 const target = resolve(dataDir, "plugins/schedule-block");
 
 mkdirSync(backupRoot, { recursive: true });

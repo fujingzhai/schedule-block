@@ -412,13 +412,6 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
     return { domNodes: [wrap] };
   }
 
-  if (arg.event.allDay) {
-    const marker = document.createElement("span");
-    marker.className = "cb-allday-event-marker";
-    marker.style.backgroundColor = String(arg.event.backgroundColor || lastColor());
-    wrap.appendChild(marker);
-  }
-
   if (isTodo) {
     const check = document.createElement("button");
     check.type = "button";
