@@ -2180,6 +2180,16 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function focusWidgetFrame(target: EventTarget | null): void {
   try {
+    // 聚焦子 window 不一定会同步激活思源宿主里的 iframe；若宿主仍持有焦点，
+    // FullCalendar 第一次拖拽的 down→move→up 序列可能在激活 iframe 时被打断。
+    const hostFrame = window.frameElement as HTMLElement | null;
+    if (hostFrame && typeof hostFrame.focus === "function") {
+      try {
+        hostFrame.focus({ preventScroll: true });
+      } catch {
+        hostFrame.focus();
+      }
+    }
     window.focus();
   } catch {
     // SiYuan/Chromium 某些宿主状态可能拒绝 focus；失败不应阻塞交互。

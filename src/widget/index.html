@@ -8,19 +8,87 @@
   <body>
     <div id="app"></div>
     <!-- iframe 首次点击时浏览器先转移焦点，可能打断 FullCalendar PointerDragging 的
-         down→up 序列，导致 dateClick/select/event drag 失效。在捕获阶段提前 focus
-         iframe，确保后续释放事件正常到达，不影响单击空白不新建的设计。 -->
+         down→up 序列，导致 dateClick/select/event drag 失效。在捕获阶段同时 focus
+         宿主 iframe 与挂件窗口，确保后续释放事件正常到达，不影响单击空白不新建的设计。 -->
     <script>
       (function () {
-        function focusFrame() {
+        var suppressNativeMouseDown = false;
+        var replayingMouseDown = false;
+
+        function hostFrameIsActive() {
           try {
+            return Boolean(window.frameElement && window.parent.document.activeElement === window.frameElement);
+          } catch (err) {
+            return false;
+          }
+        }
+
+        function replayCalendarMouseDown(event) {
+          var target = event.target;
+          if (!(target instanceof Element) || !target.closest('.cb-calendar')) return;
+          replayingMouseDown = true;
+          suppressNativeMouseDown = true;
+          try {
+            target.dispatchEvent(new MouseEvent('mousedown', {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              view: window,
+              detail: 1,
+              screenX: event.screenX,
+              screenY: event.screenY,
+              clientX: event.clientX,
+              clientY: event.clientY,
+              button: 0,
+              buttons: 1,
+              ctrlKey: event.ctrlKey,
+              shiftKey: event.shiftKey,
+              altKey: event.altKey,
+              metaKey: event.metaKey
+            }));
+          } finally {
+            replayingMouseDown = false;
+            // 某些内核不会继续派发兼容 mousedown，避免标记残留到下一次点击。
+            setTimeout(function () { suppressNativeMouseDown = false; }, 0);
+          }
+        }
+
+        function focusFrame(event) {
+          var hostWasActive = hostFrameIsActive();
+          try {
+            // window.focus() 只处理挂件内部焦点；思源宿主里的 iframe 元素也必须先激活。
+            // 两者同源，frameElement 可直接访问。老内核不支持 focus options 时再降级。
+            if (window.frameElement && typeof window.frameElement.focus === 'function') {
+              try {
+                window.frameElement.focus({ preventScroll: true });
+              } catch (err) {
+                window.frameElement.focus();
+              }
+            }
             window.focus();
           } catch (err) {
             // 忽略宿主环境拒绝 focus 的情况。
           }
+
+          // Chromium 首次激活 iframe 时偶尔会吞掉紧随 pointerdown 的兼容 mousedown，
+          // 而 FullCalendar 6 的鼠标拖拽正从 mousedown 开始。激活后立即补发一次，后续
+          // 真实 mousemove/mouseup 仍由 FullCalendar 接管。
+          if (!hostWasActive && event && event.type === 'pointerdown' &&
+              event.pointerType === 'mouse' && event.button === 0) {
+            replayCalendarMouseDown(event);
+          }
+        }
+
+        function swallowDuplicateMouseDown(event) {
+          if (suppressNativeMouseDown && !replayingMouseDown && event.isTrusted) {
+            suppressNativeMouseDown = false;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
         }
         document.addEventListener('pointerdown', focusFrame, true);
         document.addEventListener('mousedown', focusFrame, true);
+        document.addEventListener('mousedown', swallowDuplicateMouseDown, true);
         document.addEventListener('touchstart', focusFrame, { capture: true, passive: true });
       })();
     </script>
