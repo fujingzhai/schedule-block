@@ -14,6 +14,9 @@
       (function () {
         var suppressNativeMouseDown = false;
         var replayingMouseDown = false;
+        // 面板页签打开时，思源可能已经把宿主 iframe 标记为 active，但 FullCalendar
+        // 还没有收到过完整的鼠标序列。不能只用宿主 activeElement 判断是否已预热。
+        var calendarMouseDownPrimed = false;
 
         function hostFrameIsActive() {
           try {
@@ -26,6 +29,7 @@
         function replayCalendarMouseDown(event) {
           var target = event.target;
           if (!(target instanceof Element) || !target.closest('.cb-calendar')) return;
+          calendarMouseDownPrimed = true;
           replayingMouseDown = true;
           suppressNativeMouseDown = true;
           try {
@@ -73,7 +77,7 @@
           // Chromium 首次激活 iframe 时偶尔会吞掉紧随 pointerdown 的兼容 mousedown，
           // 而 FullCalendar 6 的鼠标拖拽正从 mousedown 开始。激活后立即补发一次，后续
           // 真实 mousemove/mouseup 仍由 FullCalendar 接管。
-          if (!hostWasActive && event && event.type === 'pointerdown' &&
+          if ((!hostWasActive || !calendarMouseDownPrimed) && event && event.type === 'pointerdown' &&
               event.pointerType === 'mouse' && event.button === 0) {
             replayCalendarMouseDown(event);
           }
@@ -90,6 +94,10 @@
         document.addEventListener('mousedown', focusFrame, true);
         document.addEventListener('mousedown', swallowDuplicateMouseDown, true);
         document.addEventListener('touchstart', focusFrame, { capture: true, passive: true });
+        window.addEventListener('blur', function () { calendarMouseDownPrimed = false; });
+        document.addEventListener('visibilitychange', function () {
+          if (document.hidden) calendarMouseDownPrimed = false;
+        });
       })();
     </script>
     <script type="module" src="./main.ts"></script>

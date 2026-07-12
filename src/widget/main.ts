@@ -2229,6 +2229,14 @@ function primeCalendarInteraction(target: EventTarget | null = null): void {
   });
 }
 
+function cancelCalendarInteractionPrime(): void {
+  if (!interactionPrimeRaf) {
+    return;
+  }
+  window.cancelAnimationFrame(interactionPrimeRaf);
+  interactionPrimeRaf = 0;
+}
+
 /* ---------- 启动 ---------- */
 
 async function boot(): Promise<void> {
@@ -2503,12 +2511,17 @@ async function boot(): Promise<void> {
   const calendarEl = root.querySelector(".cb-calendar") as HTMLElement;
   if (calendarEl) {
     resizeObserver.observe(calendarEl);
-    const preflightInteraction = (ev: Event) => primeCalendarInteraction(ev.target);
-    calendarEl.addEventListener("pointerdown", preflightInteraction, true);
-    calendarEl.addEventListener("mousedown", preflightInteraction, true);
-    calendarEl.addEventListener("touchstart", preflightInteraction, { capture: true, passive: true });
-    calendarEl.addEventListener("pointerenter", preflightInteraction, { passive: true });
-    calendarEl.addEventListener("mouseenter", preflightInteraction, { passive: true });
+    const prepareBeforeInteraction = (ev: Event) => primeCalendarInteraction(ev.target);
+    const beginInteraction = (ev: Event) => {
+      // pointerenter/mouseenter 安排的下一帧尺寸校准不能插进已经开始的拖拽。
+      cancelCalendarInteractionPrime();
+      focusWidgetFrame(ev.target);
+    };
+    calendarEl.addEventListener("pointerdown", beginInteraction, true);
+    calendarEl.addEventListener("mousedown", beginInteraction, true);
+    calendarEl.addEventListener("touchstart", beginInteraction, { capture: true, passive: true });
+    calendarEl.addEventListener("pointerenter", prepareBeforeInteraction, { passive: true });
+    calendarEl.addEventListener("mouseenter", prepareBeforeInteraction, { passive: true });
     calendarEl.addEventListener("click", (ev) => {
       const dayNumber = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".fc-daygrid-day-number");
       if (panelMode && currentViewKey() === "month" && dayNumber) {
