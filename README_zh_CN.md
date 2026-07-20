@@ -114,7 +114,7 @@ MIT
 
 ---
 
-## 声明
+## 支持开发——Buy me a token
 
 本插件完全通过 vibe coding 制作。制作用到的工具和模型包括：
 
@@ -123,4 +123,16 @@ MIT
 - Claude Code（Fable 5）：约 10% 任务量
 - QoderWork（GLM-5.1）：约 10% 任务量
 
-请有需要使用的用户自行斟酌使用。
+（以上为插件初版发布时的预估，后续不断更新，始终选用了更新时刻所能用到的顶尖模型）
+
+顶尖模型价格昂贵，个人学业时间安排紧张，创作不易，如果您喜欢或受益于本插件，欢迎您支持插件的开发。我会持续更新，让体验越来越好。
+
+请备注您的链滴账户名或其他任何社交账户，我会将您列入插件赞助名单，以表感激。您的支持是我创作的最大动力！
+
+| ![微信支付](https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-wechat.png) | ![支付宝](https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-alipay.jpg) |
+| :---: | :---: |
+
+## 赞助者
+
+- [youxia](https://ld246.com/member/youxia)
+

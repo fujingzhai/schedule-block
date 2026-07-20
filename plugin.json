@@ -2,6 +2,12 @@
   "name": "schedule-block",
   "author": "游夏",
   "url": "https://github.com/fujingzhai/schedule-block",
+  "funding": {
+    "custom": [
+      "https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-wechat.png",
+      "https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-alipay.jpg"
+    ]
+  },
   "version": "1.6.5",
   "minAppVersion": "3.6.0",
   "backends": [

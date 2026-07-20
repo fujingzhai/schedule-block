@@ -114,7 +114,7 @@ MIT
 
 ---
 
-## Statement
+## Support Development — Buy me a token
 
 This plugin was made entirely through vibe coding. The tools and models used were roughly:
 
@@ -123,4 +123,16 @@ This plugin was made entirely through vibe coding. The tools and models used wer
 - Claude Code (Fable 5): 10%
 - QoderWork (GLM-5.1): 10%
 
-Please use it at your own discretion.
+(The figures above are estimates from the plugin's first release; it keeps being updated, always with the most capable models available at the time.)
+
+Top-tier models are expensive and my study schedule is tight, so this work has not come easily. If you like this plugin or benefit from it, you are warmly invited to support its development. I will keep updating it and making the experience better.
+
+Please leave your LianDi (ld246) username or any other social account with your payment, and I will add you to the plugin's sponsor list as a token of my gratitude. Your support is my greatest motivation to create!
+
+| ![WeChat Pay](https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-wechat.png) | ![Alipay](https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-alipay.jpg) |
+| :---: | :---: |
+
+## Sponsors
+
+- [youxia](https://ld246.com/member/youxia)
+
