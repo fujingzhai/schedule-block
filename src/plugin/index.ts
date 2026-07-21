@@ -247,14 +247,14 @@ export default class CalendarBlockPlugin extends Plugin {
     const context = contextFromProtyle(protyle, nodeElement);
     const date = await defaultDateForDoc(context.docID);
     try {
-      protyle.insert(widgetMarkdown(view, date), true, true);
+      protyle.insert(iframeMarkdown(view, date), true, true);
     } catch (err) {
       console.error("schedule-block: protyle.insert 失败，回退到内核插入", err);
       this.insertAtCursor(view, context);
     }
   }
 
-  /** 在光标所在块下方插入挂件块；找不到光标时追加到当前文档末尾 */
+  /** 在光标所在块下方插入 IFrame 块；找不到光标时追加到当前文档末尾 */
   private async insertAtCursor(view: ViewKey, context = getCurrentContext()) {
     const docID = await resolveDocID(context);
     if (!docID) {
@@ -264,7 +264,7 @@ export default class CalendarBlockPlugin extends Plugin {
     try {
       const previousID = context.blockID && context.blockID !== docID ? context.blockID : undefined;
       const date = await defaultDateForDoc(docID);
-      const operations = await insertWidgetBlock(view, docID, date, previousID);
+      const operations = await insertIFrameBlock(view, docID, date, previousID);
       const insertedID = operations?.[0]?.doOperations?.[0]?.id || "";
       if (isBlockID(insertedID)) {
         await post("/api/attr/setBlockAttrs", {
@@ -282,15 +282,15 @@ export default class CalendarBlockPlugin extends Plugin {
   }
 }
 
-function widgetMarkdown(view: ViewKey, date = fmtDate(new Date())): string {
+function iframeMarkdown(view: ViewKey, date = fmtDate(new Date())): string {
   const src = `/plugins/schedule-block/widget/index.html?view=${encodeURIComponent(view)}&date=${encodeURIComponent(date)}`;
-  return `<iframe src="${src}" data-subtype="widget" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>`;
+  return `<iframe src="${src}" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>`;
 }
 
-async function insertWidgetBlock(view: ViewKey, docID: string, date: string, previousID?: string): Promise<BlockOperation[]> {
+async function insertIFrameBlock(view: ViewKey, docID: string, date: string, previousID?: string): Promise<BlockOperation[]> {
   const payload: any = {
     dataType: "markdown",
-    data: widgetMarkdown(view, date),
+    data: iframeMarkdown(view, date),
     parentID: docID
   };
   if (previousID) {
