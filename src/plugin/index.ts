@@ -4,17 +4,31 @@ import { fmtDate, parseDateFromTitle } from "../shared/date";
 type ViewKey = "day" | "week";
 const PANEL_TAB = "schedulePanel";
 
-const BLOCK_LABEL: Record<ViewKey, string> = {
-  day: "日历块",
-  week: "周历块"
-};
+interface BlockSpec {
+  id: string;
+  view: ViewKey;
+  label: string;
+  pinyin: string[];
+  /** 插入时给块的默认高度 */
+  height: string;
+}
 
-const VIEW_PINYIN: Record<ViewKey, string[]> = {
-  day: ["rilikuai", "ri", "day", "calendar"],
-  week: ["zhoulikuai", "zhou", "week"]
-};
-
-const VIEWS: ViewKey[] = ["day", "week"];
+const BLOCKS: BlockSpec[] = [
+  {
+    id: "day",
+    view: "day",
+    label: "日历块",
+    pinyin: ["rilikuai", "ri", "day", "calendar"],
+    height: "1330px"
+  },
+  {
+    id: "week",
+    view: "week",
+    label: "周历块",
+    pinyin: ["zhoulikuai", "zhou", "week"],
+    height: "1330px"
+  }
+];
 
 interface ApiResponse<T = unknown> {
   code: number;
@@ -70,21 +84,21 @@ export default class CalendarBlockPlugin extends Plugin {
       }
     });
 
-    this.protyleSlash = VIEWS.map((view) => ({
-      id: `schedule-block-${view}`,
-      filter: [BLOCK_LABEL[view], "calendar", ...VIEW_PINYIN[view]],
-      html: `<div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconCalendarBlock"></use></svg><span class="b3-list-item__text">插入${BLOCK_LABEL[view]}</span></div>`,
+    this.protyleSlash = BLOCKS.map((spec) => ({
+      id: `schedule-block-${spec.id}`,
+      filter: [spec.label, "calendar", ...spec.pinyin],
+      html: `<div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconCalendarBlock"></use></svg><span class="b3-list-item__text">插入${spec.label}</span></div>`,
       callback: (protyle: Protyle, nodeElement: HTMLElement) => {
-        this.insertFromSlash(view, protyle, nodeElement);
+        this.insertFromSlash(spec, protyle, nodeElement);
       }
     }));
 
-    VIEWS.forEach((view) => {
+    BLOCKS.forEach((spec) => {
       this.addCommand({
-        langKey: `insertCalendarBlock-${view}`,
-        langText: `插入${BLOCK_LABEL[view]}`,
+        langKey: `insertCalendarBlock-${spec.id}`,
+        langText: `插入${spec.label}`,
         hotkey: "",
-        callback: () => this.insertAtCursor(view)
+        callback: () => this.insertAtCursor(spec)
       });
     });
 
@@ -164,11 +178,11 @@ export default class CalendarBlockPlugin extends Plugin {
       label: "添加日程",
       click: () => this.openQuickAdd()
     });
-    VIEWS.forEach((view) => {
+    BLOCKS.forEach((spec) => {
       menu.addItem({
         icon: "iconCalendarBlock",
-        label: `插入${BLOCK_LABEL[view]}`,
-        click: () => this.insertAtCursor(view, this.lastContext)
+        label: `插入${spec.label}`,
+        click: () => this.insertAtCursor(spec, this.lastContext)
       });
     });
     menu.addSeparator();
@@ -243,19 +257,19 @@ export default class CalendarBlockPlugin extends Plugin {
   }
 
   /** 斜杠菜单使用编辑器原生插入，避免先插入再延迟删除触发块造成闪烁 */
-  private async insertFromSlash(view: ViewKey, protyle: Protyle, nodeElement: HTMLElement) {
+  private async insertFromSlash(spec: BlockSpec, protyle: Protyle, nodeElement: HTMLElement) {
     const context = contextFromProtyle(protyle, nodeElement);
     const date = await defaultDateForDoc(context.docID);
     try {
-      protyle.insert(iframeMarkdown(view, date), true, true);
+      protyle.insert(iframeMarkdown(spec, date), true, true);
     } catch (err) {
       console.error("schedule-block: protyle.insert 失败，回退到内核插入", err);
-      this.insertAtCursor(view, context);
+      this.insertAtCursor(spec, context);
     }
   }
 
   /** 在光标所在块下方插入 IFrame 块；找不到光标时追加到当前文档末尾 */
-  private async insertAtCursor(view: ViewKey, context = getCurrentContext()) {
+  private async insertAtCursor(spec: BlockSpec, context = getCurrentContext()) {
     const docID = await resolveDocID(context);
     if (!docID) {
       showMessage("请先把光标放进文档", 5000, "error");
@@ -264,14 +278,14 @@ export default class CalendarBlockPlugin extends Plugin {
     try {
       const previousID = context.blockID && context.blockID !== docID ? context.blockID : undefined;
       const date = await defaultDateForDoc(docID);
-      const operations = await insertIFrameBlock(view, docID, date, previousID);
+      const operations = await insertIFrameBlock(spec, docID, date, previousID);
       const insertedID = operations?.[0]?.doOperations?.[0]?.id || "";
       if (isBlockID(insertedID)) {
         await post("/api/attr/setBlockAttrs", {
           id: insertedID,
           attrs: {
-            style: "height: 1330px;",
-            "custom-calendar-view": view,
+            style: `height: ${spec.height};`,
+            "custom-calendar-view": spec.view,
             "custom-calendar-date": date
           }
         });
@@ -282,15 +296,15 @@ export default class CalendarBlockPlugin extends Plugin {
   }
 }
 
-function iframeMarkdown(view: ViewKey, date = fmtDate(new Date())): string {
-  const src = `/plugins/schedule-block/widget/index.html?view=${encodeURIComponent(view)}&date=${encodeURIComponent(date)}`;
+function iframeMarkdown(spec: BlockSpec, date = fmtDate(new Date())): string {
+  const src = `/plugins/schedule-block/widget/index.html?view=${encodeURIComponent(spec.view)}&date=${encodeURIComponent(date)}`;
   return `<iframe src="${src}" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>`;
 }
 
-async function insertIFrameBlock(view: ViewKey, docID: string, date: string, previousID?: string): Promise<BlockOperation[]> {
+async function insertIFrameBlock(spec: BlockSpec, docID: string, date: string, previousID?: string): Promise<BlockOperation[]> {
   const payload: any = {
     dataType: "markdown",
-    data: iframeMarkdown(view, date),
+    data: iframeMarkdown(spec, date),
     parentID: docID
   };
   if (previousID) {

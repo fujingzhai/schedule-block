@@ -1,5 +1,29 @@
 import { addDaysStr, diffDays, minutesToTime, parseTimeMinutes } from "./util";
 import { defaultColor, getPalette } from "./palette";
+import { REPEAT_FREQ_LABELS, REPEAT_FREQS, RepeatFreq } from "./repeat";
+
+/** 弹窗里的重复设置：频率取 Apple 日历的简洁档位，结束方式支持永不 / 次数 / 日期 */
+export interface RepeatChoice {
+  freq: "none" | RepeatFreq;
+  end: "never" | "count" | "until";
+  /** 含首次在内的总次数 */
+  count: number;
+  /** 结束日期（含当天） */
+  until: string;
+}
+
+/** 单条规则最多展开的实例数，输入框据此限幅 */
+export const REPEAT_MAX_COUNT = 365;
+const REPEAT_DEFAULT_COUNT = 10;
+
+export function noRepeat(startDate: string): RepeatChoice {
+  return {
+    freq: "none",
+    end: "count",
+    count: REPEAT_DEFAULT_COUNT,
+    until: addDaysStr(startDate, 30)
+  };
+}
 
 export interface PopoverValues {
   title: string;
@@ -12,6 +36,8 @@ export interface PopoverValues {
   color: string;
   note: string;
   isTodo: boolean;
+  /** 重复设置；编辑既有日程时同样可改 */
+  repeat: RepeatChoice;
 }
 
 export interface PopoverAnchor {
@@ -25,6 +51,8 @@ export interface PopoverOptions {
   anchor: PopoverAnchor;
   values: PopoverValues;
   ignoreOutside?: HTMLElement[];
+  /** 该日程当前的重复规则描述（如"每周 · 共 5 次"）；有值即表示它是重复日程 */
+  repeatHint?: string;
   onSave(values: PopoverValues): void;
   onDelete?(): void;
   onTitleChange?(title: string): void;
@@ -83,6 +111,24 @@ export function openPopover(opts: PopoverOptions): void {
         <label class="cb-allday"><input class="cb-allday-check" type="checkbox">全天</label>
       </div>
     </div>
+    <div class="cb-pop-row cb-pop-repeat-row">
+      <svg class="cb-pop-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h9V4.5L20.5 8L16 11.5V9H8v3.2L6 10.4V8a1 1 0 0 1 1-1Zm10 10H8v2.5L3.5 16L8 12.5V15h8v-3.2l2 1.8V16a1 1 0 0 1-1 1Z"/></svg>
+      <select class="cb-repeat-freq" aria-label="重复">
+        <option value="none">不重复</option>
+        ${REPEAT_FREQS.map((f) => `<option value="${f}">${REPEAT_FREQ_LABELS[f]}</option>`).join("")}
+      </select>
+    </div>
+    <div class="cb-pop-row cb-pop-repeat-end-row" hidden>
+      <span class="cb-pop-icon cb-pop-icon--text">结束</span>
+      <select class="cb-repeat-end" aria-label="结束重复">
+        <option value="never">永不</option>
+        <option value="count">重复次数</option>
+        <option value="until">某日结束</option>
+      </select>
+      <span class="cb-repeat-count-box"><input class="cb-repeat-count" type="number" min="2" max="${REPEAT_MAX_COUNT}" step="1" aria-label="重复次数"><span class="cb-repeat-unit">次</span></span>
+      <input class="cb-repeat-until" type="date" aria-label="结束日期">
+    </div>
+    <div class="cb-pop-series-hint" hidden></div>
     <div class="cb-pop-row cb-pop-colors">
       <svg class="cb-pop-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 22a10 10 0 1 1 10-10c0 2.21-1.79 4-4 4h-1.77c-.28 0-.5.22-.5.5c0 .12.05.23.13.33c.41.47.64 1.06.64 1.67A3.5 3.5 0 0 1 13 22h-1Zm-5.5-9a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3Zm3-4a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3Zm5 0a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3Zm3 4a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3Z"/></svg>
       <div class="cb-swatches"></div>
@@ -113,6 +159,13 @@ export function openPopover(opts: PopoverOptions): void {
   const swatches = $<HTMLElement>(".cb-swatches");
   const noteInput = $<HTMLTextAreaElement>(".cb-pop-note");
   const deleteBtn = $<HTMLButtonElement>(".cb-pop-delete");
+  const repeatFreq = $<HTMLSelectElement>(".cb-repeat-freq");
+  const repeatEndRow = $<HTMLElement>(".cb-pop-repeat-end-row");
+  const repeatEnd = $<HTMLSelectElement>(".cb-repeat-end");
+  const repeatCountBox = $<HTMLElement>(".cb-repeat-count-box");
+  const repeatCount = $<HTMLInputElement>(".cb-repeat-count");
+  const repeatUntil = $<HTMLInputElement>(".cb-repeat-until");
+  const seriesHint = $<HTMLElement>(".cb-pop-series-hint");
 
   const v = { ...opts.values };
   titleInput.value = v.title;
@@ -126,6 +179,53 @@ export function openPopover(opts: PopoverOptions): void {
   if (!opts.onDelete) {
     deleteBtn.style.display = "none";
   }
+
+  const repeat: RepeatChoice = { ...(v.repeat || noRepeat(v.startDate)) };
+  if (opts.repeatHint) {
+    seriesHint.hidden = false;
+    seriesHint.textContent = opts.repeatHint;
+  }
+  repeatFreq.value = repeat.freq;
+  repeatEnd.value = repeat.end;
+  repeatCount.value = String(repeat.count);
+  repeatUntil.value = repeat.until;
+
+  const clampCount = (raw: string): number => {
+    const n = Math.round(Number(raw));
+    if (!Number.isFinite(n)) {
+      return REPEAT_DEFAULT_COUNT;
+    }
+    return Math.min(Math.max(n, 2), REPEAT_MAX_COUNT);
+  };
+
+  const syncRepeatRows = () => {
+    const on = repeatFreq.value !== "none";
+    repeatEndRow.hidden = !on;
+    repeatCountBox.hidden = repeatEnd.value !== "count";
+    repeatUntil.hidden = repeatEnd.value !== "until";
+  };
+  syncRepeatRows();
+
+  repeatFreq.addEventListener("change", () => {
+    syncRepeatRows();
+    const span: Record<string, number> = { none: 0, daily: 30, weekday: 30, weekly: 8 * 7, biweekly: 12 * 14, monthly: 365, yearly: 365 * 5 };
+    const days = span[repeatFreq.value] || 0;
+    if (days > 0) {
+      repeatUntil.value = addDaysStr(startDate.value || v.startDate, days);
+    }
+    opts.onValuesChange?.(collect());
+  });
+  repeatEnd.addEventListener("change", () => {
+    syncRepeatRows();
+    opts.onValuesChange?.(collect());
+  });
+  repeatCount.addEventListener("change", () => {
+    repeatCount.value = String(clampCount(repeatCount.value));
+    opts.onValuesChange?.(collect());
+  });
+  repeatUntil.addEventListener("change", () => {
+    opts.onValuesChange?.(collect());
+  });
 
   let color = v.color || defaultColor();
   const previewTitle = () => titleInput.value.trim() || "（无标题）";
@@ -195,6 +295,10 @@ export function openPopover(opts: PopoverOptions): void {
     if (endDate.style.display === "none" || endDate.value < startDate.value) {
       endDate.value = startDate.value;
     }
+    // 结束日期落在开始日之前时没有意义，跟着开始日重新给一个默认值
+    if (startDate.value && repeatUntil.value && repeatUntil.value <= startDate.value) {
+      repeatUntil.value = addDaysStr(startDate.value, 30);
+    }
     if (!allDayCheck.checked) {
       shiftEndByDuration();
     }
@@ -227,7 +331,13 @@ export function openPopover(opts: PopoverOptions): void {
       endTime: et,
       color,
       note: noteInput.value.trim(),
-      isTodo: todoCheck.checked
+      isTodo: todoCheck.checked,
+      repeat: {
+        freq: repeatFreq.value as RepeatChoice["freq"],
+        end: repeatEnd.value as RepeatChoice["end"],
+        count: clampCount(repeatCount.value),
+        until: repeatUntil.value || repeat.until
+      }
     };
   };
 

@@ -13,13 +13,16 @@ It is not a global calendar and it is not a replacement for database calendar vi
 - The panel follows the current time automatically: the now indicator advances every minute and the view rolls over to the new day at midnight, with no need to reopen it.
 - Month view shows Gregorian + lunar dates per cell, compact dot-style events, a "+N more" popover when overflowing, and per-day weather.
 - Embedded day blocks and week blocks for inline use in documents.
-- Each block is bound to a date or ISO week, with a toolbar anchor that jumps back to that bound range.
+- Each block is bound to a date or ISO week; the toolbar button shows the range you are currently viewing, highlights when it matches the bound range, and jumps back to it when clicked.
 - New blocks can infer their initial date or week from the document title; if no supported title date is found, they use the current date.
 - Settings allow changing the bound date/week and the default event duration.
 - New events default to 30 minutes, with per-block options for 15, 30, 45, or 60 minutes.
 - Newly inserted schedule blocks are tall enough to show the full 24-hour timeline by default.
 - Drag-select to create events; single-clicking blank space does nothing, while double-clicking creates a default-duration event.
 - Click an event to edit title, date, time, all-day state, color, and notes.
+- Recurring events use a rule, like other calendar apps: an event stores one repeat rule (daily / every weekday / weekly / biweekly / monthly / yearly, ending never, after N times, or on a date) and the view expands it into occurrences, so editing the rule updates the whole series.
+- Editing, dragging, or deleting a recurring event asks for the scope: this event only, this and following events, or all events.
+- Recurring to-dos track completion per occurrence, repeating events carry a loop marker on the chip, and the editor shows the current rule.
 - Drag or resize events to adjust time.
 - Hover an event with notes to show the note in a lightweight tooltip; it disappears when the mouse leaves.
 - Use `Cmd/Ctrl+Z` to undo the previous schedule data operation.
@@ -127,7 +130,7 @@ This plugin was made entirely through vibe coding. The tools and models used wer
 
 Top-tier models are expensive and my study schedule is tight, so this work has not come easily. If you like this plugin or benefit from it, you are warmly invited to support its development. I will keep updating it and making the experience better.
 
-Please leave your LianDi (ld246) username or any other social account with your payment, and I will add you to the plugin's sponsor list as a token of my gratitude. Your support is my greatest motivation to create!
+Please leave your LianDi (ld246) username or any other social account with your payment, and at the next plugin update I will add you to the sponsor list of **all my plugins** (if you would rather appear only in a specific plugin's list, please say so in your note), as a token of my gratitude. Your support is my greatest motivation to create!
 
 | ![WeChat Pay](https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-wechat.png) | ![Alipay](https://fastly.jsdelivr.net/gh/fujingzhai/schedule-block@main/assets/sponsor-alipay.jpg) |
 | :---: | :---: |
@@ -135,4 +138,5 @@ Please leave your LianDi (ld246) username or any other social account with your 
 ## Sponsors
 
 - [youxia](https://ld246.com/member/youxia)
+- [MrMang](https://ld246.com/member/MrMang)
 

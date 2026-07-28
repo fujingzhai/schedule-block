@@ -1,4 +1,6 @@
 import { readWorkspaceFile, writeWorkspaceFile } from "./api";
+import { addDaysStr } from "./util";
+import type { RepeatRule } from "./repeat";
 
 export interface CalEvent {
   id: string;
@@ -14,9 +16,18 @@ export interface CalEvent {
   docId: string;
   /** 是否作为待办事项显示；缺省为普通日程（旧数据兼容） */
   isTodo?: boolean;
-  /** 待办是否已完成；仅 isTodo 为 true 时有效 */
+  /** 待办是否已完成；仅 isTodo 为 true 时有效（重复日程改用 doneDates 逐次记录） */
   done?: boolean;
+  /** 重复规则；没有该字段就是普通单条日程 */
+  repeat?: RepeatRule;
+  /** 已从系列里摘出去的日期：被单独修改（另存为独立日程）或单独删除的那几次 */
+  exdates?: string[];
+  /** 重复待办里已完成的那几次 */
+  doneDates?: string[];
 }
+
+/** 改动/删除重复日程时的作用范围，与 Google / Apple 日历一致 */
+export type RepeatScope = "this" | "following" | "all";
 
 const FILE = "/data/storage/schedule-block/events.json";
 const BAK_FILE = "/data/storage/schedule-block/events.json.bak";
@@ -129,6 +140,119 @@ export class EventStore {
     this.ensureWritable();
     this.snapshot();
     this.events.push(event);
+    await this.persist();
+  }
+
+  /**
+   * 按范围改动重复日程。
+   * - all：直接改主事件，整串跟着变
+   * - this：把这一次从系列里摘出去（exdates），另存成一条独立日程
+   * - following：把原规则截止到前一天，再从这一次起另开一条带新规则的日程
+   * 三种情况都只占一次快照，撤销一步即可回到改动前。
+   */
+  async updateOccurrence(
+    eventId: string,
+    date: string,
+    scope: RepeatScope,
+    patch: Partial<CalEvent>,
+    newId: () => string
+  ): Promise<void> {
+    this.ensureWritable();
+    const event = this.get(eventId);
+    if (!event) {
+      return;
+    }
+    this.snapshot();
+    if (scope === "all" || !event.repeat || !date) {
+      Object.assign(event, patch);
+      await this.persist();
+      return;
+    }
+    if (scope === "this") {
+      event.exdates = [...(event.exdates || []), date].sort();
+      this.events.push({
+        ...event,
+        id: newId(),
+        repeat: undefined,
+        exdates: undefined,
+        doneDates: undefined,
+        done: (event.doneDates || []).includes(date),
+        ...patch
+      });
+      await this.persist();
+      return;
+    }
+    // following：原系列在这一次之前结束
+    const previousDay = addDaysStr(date, -1);
+    const startDate = event.start.split("T")[0];
+    const detached: CalEvent = {
+      ...event,
+      id: newId(),
+      exdates: (event.exdates || []).filter((d) => d >= date),
+      doneDates: (event.doneDates || []).filter((d) => d >= date),
+      done: false,
+      ...patch
+    };
+    if (previousDay < startDate) {
+      // 从第一次就开始改，等同于整串修改
+      this.events = this.events.filter((e) => e.id !== event.id);
+    } else {
+      event.repeat = { ...event.repeat, count: undefined, until: previousDay };
+      event.exdates = (event.exdates || []).filter((d) => d < date);
+      event.doneDates = (event.doneDates || []).filter((d) => d < date);
+    }
+    this.events.push(detached);
+    await this.persist();
+  }
+
+  /** 按范围删除重复日程的某一次 */
+  async removeOccurrence(eventId: string, date: string, scope: RepeatScope): Promise<void> {
+    this.ensureWritable();
+    const event = this.get(eventId);
+    if (!event) {
+      return;
+    }
+    this.snapshot();
+    if (scope === "all" || !event.repeat || !date) {
+      this.events = this.events.filter((e) => e.id !== eventId);
+      await this.persist();
+      return;
+    }
+    if (scope === "this") {
+      event.exdates = [...(event.exdates || []), date].sort();
+      await this.persist();
+      return;
+    }
+    const previousDay = addDaysStr(date, -1);
+    if (previousDay < event.start.split("T")[0]) {
+      this.events = this.events.filter((e) => e.id !== eventId);
+    } else {
+      event.repeat = { ...event.repeat, count: undefined, until: previousDay };
+      event.exdates = (event.exdates || []).filter((d) => d < date);
+      event.doneDates = (event.doneDates || []).filter((d) => d < date);
+    }
+    await this.persist();
+  }
+
+  /** 勾选/取消勾选某一次待办：重复日程逐次记录，普通日程改 done */
+  async toggleDone(eventId: string, date: string): Promise<void> {
+    this.ensureWritable();
+    const event = this.get(eventId);
+    if (!event || !event.isTodo) {
+      return;
+    }
+    this.snapshot();
+    if (!event.repeat || !date) {
+      event.done = !event.done;
+    } else {
+      const dates = new Set(event.doneDates || []);
+      if (dates.has(date)) {
+        dates.delete(date);
+      } else {
+        dates.add(date);
+      }
+      event.doneDates = Array.from(dates).sort();
+    }
     await this.persist();
   }
 

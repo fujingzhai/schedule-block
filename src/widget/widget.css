@@ -1099,6 +1099,38 @@ body:not([data-mode="panel"]) .cb-calendar.fc .cb-month-event-marker {
   display: none;
 }
 
+/* 重复日程标记 */
+.cb-event-title-line {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cb-event-title-line .cb-event-title {
+  flex: 0 1 auto;
+}
+
+.cb-event-repeat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  width: 11px;
+  height: 11px;
+  opacity: 0.72;
+}
+
+.cb-event-repeat svg {
+  width: 100%;
+  height: 100%;
+}
+
+.cb-month-event-inner .cb-event-repeat {
+  width: 9px;
+  height: 9px;
+  margin-left: 2px;
+}
+
 .cb-event-check {
   position: relative;
   flex: 0 0 auto;
@@ -1410,6 +1442,137 @@ body .fc-popover-body {
 .cb-allday input {
   margin: 0;
   accent-color: var(--cb-accent);
+}
+
+.cb-pop-repeat-row,
+.cb-pop-repeat-end-row {
+  align-items: center;
+  gap: 10px;
+}
+
+.cb-pop-repeat-row[hidden],
+.cb-pop-repeat-end-row[hidden] {
+  display: none;
+}
+
+.cb-pop-repeat-row .cb-pop-icon {
+  margin-top: 0;
+}
+
+.cb-pop-icon--text {
+  flex: 0 0 auto;
+  width: 17px;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--b3-theme-on-surface-light);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cb-popover select {
+  box-sizing: border-box;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  padding: 0 6px;
+  background: var(--b3-theme-surface);
+  color: var(--b3-theme-on-background);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.cb-popover select:hover {
+  background: var(--b3-list-hover);
+}
+
+.cb-repeat-count-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cb-repeat-count-box[hidden],
+.cb-repeat-until[hidden] {
+  display: none;
+}
+
+.cb-popover .cb-repeat-count {
+  box-sizing: border-box;
+  width: 58px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  padding: 0 6px;
+  background: var(--b3-theme-surface);
+  color: var(--b3-theme-on-background);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.cb-popover .cb-repeat-count:hover {
+  background: var(--b3-list-hover);
+}
+
+.cb-repeat-unit {
+  font-size: 13px;
+  color: var(--b3-theme-on-surface);
+}
+
+.cb-pop-series-hint {
+  margin: -6px 0 -2px 27px;
+  font-size: 12px;
+  color: var(--b3-theme-on-surface-light);
+}
+
+.cb-pop-series-hint[hidden] {
+  display: none;
+}
+
+/* 改动/删除重复日程时的范围选择 */
+.cb-scope-chooser {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 8px;
+  border: 1px solid var(--b3-border-color);
+  border-radius: 10px;
+  background: var(--b3-theme-background);
+  box-shadow: var(--b3-dialog-shadow);
+}
+
+.cb-scope-title {
+  padding: 2px 8px 6px;
+  font-size: 12px;
+  color: var(--b3-theme-on-surface-light);
+}
+
+.cb-scope-item,
+.cb-scope-cancel {
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b3-theme-on-background);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cb-scope-item:hover,
+.cb-scope-cancel:hover {
+  background: var(--b3-list-hover);
+}
+
+.cb-scope-cancel {
+  margin-top: 2px;
+  color: var(--b3-theme-on-surface-light);
 }
 
 .cb-pop-todo-row {

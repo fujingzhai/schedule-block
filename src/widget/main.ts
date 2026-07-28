@@ -5,13 +5,27 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import { getBlockAttrs, setBlockAttrs, getDocTitle, getRootId } from "./api";
-import { CalEvent, EventStore } from "./store";
+import { CalEvent, EventStore, RepeatScope } from "./store";
+import {
+  describeRepeat,
+  eventStartDate,
+  hasRepeat,
+  instanceId,
+  Occurrence,
+  occurrenceDates,
+  occurrencesInRange,
+  parseInstanceId,
+  RepeatRule,
+  shiftStamp
+} from "./repeat";
 import { WeatherKind, WeatherStore, WEATHER_LABELS } from "./weather";
 import { initThemeBridge } from "./theme";
 import {
   closePopover,
+  noRepeat,
   openPopover,
   PopoverValues,
+  RepeatChoice,
   valuesToRange
 } from "./popover";
 import {
@@ -23,7 +37,7 @@ import {
   onPaletteRemoteChange,
   savePalette
 } from "./palette";
-import { addMinutes, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr, lunarDateLabel, mixColors } from "./util";
+import { addMinutes, diffDays, fmtDate, fmtDateTime, fmtTime, addDaysStr, newEventId, textColorFor, parseDateFromTitle, getIsoWeek, parseDate, isoWeekStart, isValidDateStr, lunarDateLabel, mixColors } from "./util";
 import "./widget.css";
 
 type ViewKey = "day" | "week" | "month";
@@ -70,6 +84,8 @@ let suppressUntil = 0;
 let anchorEditor: { el: HTMLElement; dispose(): void } | null = null;
 let weatherPicker: { el: HTMLElement; date: string; dispose(): void } | null = null;
 let colorFilterPicker: { el: HTMLElement; dispose(): void } | null = null;
+let scopeChooser: { el: HTMLElement; dispose(): void } | null = null;
+let scopeCancelHook: (() => void) | null = null;
 let noteTooltip: HTMLElement | null = null;
 let noteTooltipDispose: (() => void) | null = null;
 const visibleColors = new Set<string>(getPalette());
@@ -172,7 +188,7 @@ function savePanelDefaultDuration(minutes: number): void {
   } catch {
     // 忽略
   }
-  calendar.setOption("defaultTimedEventDuration", durationToFullCalendar(defaultDurationMinutes));
+  calendar?.setOption("defaultTimedEventDuration", durationToFullCalendar(defaultDurationMinutes));
 }
 
 function isQuickAddShortcut(event: KeyboardEvent): boolean {
@@ -343,32 +359,57 @@ function applyValuesToEvent(event: EventApi, values: PopoverValues): void {
   }
 }
 
-function toFC(event: CalEvent): EventInput {
-  const isTodo = Boolean(event.isTodo);
-  const done = Boolean(event.done);
+function toFC(occ: Occurrence): EventInput {
+  const event = occ.event;
   return {
-    id: event.id,
+    id: instanceId(event.id, occ.date, occ.repeating),
     title: event.title,
-    start: event.start,
-    end: event.end,
+    start: occ.start,
+    end: occ.end,
     allDay: event.allDay,
     backgroundColor: event.color,
     borderColor: "transparent",
     textColor: textColorFor(event.color),
     extendedProps: {
-      isTodo,
-      done
+      isTodo: Boolean(event.isTodo),
+      done: occ.done,
+      repeating: occ.repeating,
+      eventId: event.id,
+      occurrenceDate: occ.date
     }
   };
+}
+
+/** 当前视图范围内的全部实例 */
+function occurrencesForRange(rangeStart: string, rangeEnd: string): Occurrence[] {
+  const out: Occurrence[] = [];
+  for (const event of visibleFilteredEvents()) {
+    out.push(...occurrencesInRange(event, rangeStart, rangeEnd));
+  }
+  return out;
 }
 
 function eventClassNames(arg: { event: EventApi }): string[] {
   const isTodo = Boolean(arg.event.extendedProps.isTodo);
   const done = Boolean(arg.event.extendedProps.done);
-  if (!isTodo) {
-    return [];
+  const names: string[] = [];
+  if (arg.event.extendedProps.repeating) {
+    names.push("cb-event--repeat");
   }
-  return done ? ["cb-event--todo-done"] : ["cb-event--todo"];
+  if (isTodo) {
+    names.push(done ? "cb-event--todo-done" : "cb-event--todo");
+  }
+  return names;
+}
+
+/** 重复日程的标记：循环箭头，跟在标题后面 */
+function repeatMarker(): HTMLElement {
+  const mark = document.createElement("span");
+  mark.className = "cb-event-repeat";
+  mark.setAttribute("aria-label", "重复日程");
+  mark.setAttribute("title", "重复日程");
+  mark.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 7h9V4.5L20.5 8L16 11.5V9H8v3.2L6 10.4V8a1 1 0 0 1 1-1Zm10 10H8v2.5L3.5 16L8 12.5V15h8v-3.2l2 1.8V16a1 1 0 0 1-1 1Z"/></svg>`;
+  return mark;
 }
 
 function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
@@ -402,6 +443,9 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
     title.className = "cb-event-title";
     title.textContent = arg.event.title || "（无标题）";
     wrap.appendChild(title);
+    if (arg.event.extendedProps.repeating) {
+      wrap.appendChild(repeatMarker());
+    }
 
     if (arg.event.start && !arg.event.allDay) {
       const time = document.createElement("span");
@@ -435,7 +479,14 @@ function renderEventContent(arg: EventContentArg): { domNodes: Node[] } {
   const title = document.createElement("span");
   title.className = "cb-event-title";
   title.textContent = arg.event.title || "（无标题）";
-  body.appendChild(title);
+  if (arg.event.extendedProps.repeating) {
+    const titleLine = document.createElement("span");
+    titleLine.className = "cb-event-title-line";
+    titleLine.append(title, repeatMarker());
+    body.appendChild(titleLine);
+  } else {
+    body.appendChild(title);
+  }
   const minutes = eventDurationMinutes(arg.event);
   if (minutes > 45) {
     const duration = document.createElement("span");
@@ -677,7 +728,8 @@ function eventToValues(event: CalEvent): PopoverValues {
       endTime: "10:00",
       color: event.color,
       note: event.note,
-      isTodo: Boolean(event.isTodo)
+      isTodo: Boolean(event.isTodo),
+      repeat: noRepeat(event.start)
     };
   }
   const [sd, st] = event.start.split("T");
@@ -691,7 +743,8 @@ function eventToValues(event: CalEvent): PopoverValues {
     endTime: et || "10:00",
     color: event.color,
     note: event.note,
-    isTodo: Boolean(event.isTodo)
+    isTodo: Boolean(event.isTodo),
+    repeat: noRepeat(sd)
   };
 }
 
@@ -706,6 +759,10 @@ function serializeRange(event: { start: Date | null; end: Date | null; allDay: b
 }
 
 function refresh(): void {
+  // 快捷添加弹窗没有日历实例
+  if (!calendar) {
+    return;
+  }
   calendar.refetchEvents();
   scheduleSyncCalendarScrollbars();
 }
@@ -725,13 +782,33 @@ function isCalendarEventVisible(ev: CalEvent): boolean {
  * 导致所有事件块同时重绘而闪烁。
  */
 function syncCalendarEvent(id: string): void {
+  if (!calendar) {
+    return;
+  }
+  const { eventId } = parseInstanceId(id);
   calendar.getEventById(id)?.remove();
-  const ev = store.get(id);
+  const ev = store.get(eventId);
   if (ev && isCalendarEventVisible(ev)) {
-    const [source] = calendar.getEventSources();
-    calendar.addEvent(toFC(ev), source ?? undefined);
+    const view = calendar.view;
+    const [occ] = occurrencesInRange(ev, fmtDate(view.activeStart), fmtDate(view.activeEnd));
+    if (occ) {
+      const [source] = calendar.getEventSources();
+      calendar.addEvent(toFC(occ), source ?? undefined);
+    }
   }
   scheduleSyncCalendarScrollbars();
+}
+
+/**
+ * 改动落盘后刷新视图：普通日程走增量同步（不闪），
+ * 重复日程一次改动会牵动多个实例，只能整表重取。
+ */
+function syncAfterChange(event: CalEvent | undefined, instance?: string): void {
+  if (!event || hasRepeat(event)) {
+    refresh();
+    return;
+  }
+  syncCalendarEvent(instance || event.id);
 }
 
 function scheduleSyncCalendarScrollbars(): void {
@@ -799,8 +876,8 @@ function hideEventNoteTooltip(): void {
   noteTooltip = null;
 }
 
-function showEventNoteTooltip(info: EventHoveringArg): void {
-  const note = store.get(info.event.id)?.note.trim();
+function showNoteTooltipFor(id: string, el: HTMLElement, point: { x: number; y: number } | null): void {
+  const note = store.get(id)?.note.trim();
   if (!note) {
     return;
   }
@@ -812,25 +889,157 @@ function showEventNoteTooltip(info: EventHoveringArg): void {
   noteTooltip = tooltip;
 
   const move = (event: MouseEvent) => positionNoteTooltip(event.clientX, event.clientY);
-  info.el.addEventListener("mousemove", move);
-  noteTooltipDispose = () => info.el.removeEventListener("mousemove", move);
+  el.addEventListener("mousemove", move);
+  noteTooltipDispose = () => el.removeEventListener("mousemove", move);
 
-  const event = info.jsEvent;
-  if (event) {
-    positionNoteTooltip(event.clientX, event.clientY);
+  if (point) {
+    positionNoteTooltip(point.x, point.y);
   } else {
-    const rect = info.el.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     positionNoteTooltip(rect.right, rect.top);
   }
 }
 
-async function toggleTodoDone(id: string): Promise<void> {
-  const stored = store.get(id);
+function showEventNoteTooltip(info: EventHoveringArg): void {
+  const jsEvent = info.jsEvent;
+  showNoteTooltipFor(info.event.id, info.el, jsEvent ? { x: jsEvent.clientX, y: jsEvent.clientY } : null);
+}
+
+/* ---------- 重复日程 ---------- */
+
+/** 弹窗取值 → 存储规则；不重复时返回 undefined */
+function ruleFromValues(values: PopoverValues): RepeatRule | undefined {
+  const choice = values.repeat;
+  if (!choice || choice.freq === "none") {
+    return undefined;
+  }
+  const rule: RepeatRule = { freq: choice.freq };
+  if (choice.end === "count") {
+    rule.count = Math.max(2, Math.round(choice.count));
+  } else if (choice.end === "until" && isValidDateStr(choice.until)) {
+    rule.until = choice.until;
+  }
+  return rule;
+}
+
+/** 存储规则 → 弹窗取值 */
+function choiceFromRule(event: CalEvent): RepeatChoice {
+  const base = noRepeat(event.start.split("T")[0]);
+  const rule = event.repeat;
+  if (!rule) {
+    return base;
+  }
+  return {
+    freq: rule.freq,
+    end: rule.count ? "count" : rule.until ? "until" : "never",
+    count: rule.count || base.count,
+    until: rule.until || base.until
+  };
+}
+
+/**
+ * 整串修改时，把某一次实例的新时间折算回系列主事件：
+ * 日期按这一次挪动的天数平移，时刻与时长直接取新值。
+ */
+function seriesShiftPatch(event: CalEvent, occDate: string, start: string, end: string): { start: string; end: string } {
+  const newStartDate = start.split("T")[0];
+  const shiftDays = diffDays(occDate || eventStartDate(event), newStartDate);
+  const baseStartDate = shiftStamp(event.start, shiftDays).split("T")[0];
+  const spanDays = Math.max(diffDays(newStartDate, end.split("T")[0]), 0);
+  const startTime = start.includes("T") ? start.split("T")[1] : "";
+  const endTime = end.includes("T") ? end.split("T")[1] : "";
+  const endDate = addDaysStr(baseStartDate, spanDays);
+  return {
+    start: startTime ? `${baseStartDate}T${startTime}` : baseStartDate,
+    end: endTime ? `${endDate}T${endTime}` : endDate
+  };
+}
+
+/** 打开"改动范围"选择条：仅此日程 / 此后所有 / 全部日程 */
+function chooseRepeatScope(anchor: { x: number; y: number }, kind: "edit" | "delete", onPick: (scope: RepeatScope) => void, onCancel?: () => void): void {
+  closeScopeChooser();
+  const el = document.createElement("div");
+  el.className = "cb-scope-chooser";
+  el.setAttribute("role", "dialog");
+  el.innerHTML = `
+    <div class="cb-scope-title">${kind === "delete" ? "删除重复日程" : "更改重复日程"}</div>
+    <button type="button" class="cb-scope-item" data-scope="this">仅此日程</button>
+    <button type="button" class="cb-scope-item" data-scope="following">此后所有日程</button>
+    <button type="button" class="cb-scope-item" data-scope="all">全部日程</button>
+    <button type="button" class="cb-scope-cancel">取消</button>
+  `;
+  document.body.appendChild(el);
+  const margin = 8;
+  const rect = el.getBoundingClientRect();
+  el.style.left = `${Math.min(Math.max(anchor.x, margin), Math.max(window.innerWidth - rect.width - margin, margin))}px`;
+  el.style.top = `${Math.min(Math.max(anchor.y, margin), Math.max(window.innerHeight - rect.height - margin, margin))}px`;
+
+  el.querySelectorAll<HTMLButtonElement>("[data-scope]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const scope = (btn.dataset.scope || "this") as RepeatScope;
+      closeScopeChooser();
+      onPick(scope);
+    });
+  });
+  let picked = false;
+  el.querySelectorAll<HTMLButtonElement>("[data-scope]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      picked = true;
+    });
+  });
+  el.querySelector(".cb-scope-cancel")!.addEventListener("click", () => closeScopeChooser());
+  scopeCancelHook = () => {
+    if (!picked) {
+      onCancel?.();
+    }
+  };
+
+  const onOutside = (event: MouseEvent) => {
+    if (!el.contains(event.target as Node)) {
+      closeScopeChooser();
+    }
+  };
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      closeScopeChooser();
+    }
+  };
+  const timer = window.setTimeout(() => {
+    document.addEventListener("mousedown", onOutside, true);
+    document.addEventListener("keydown", onKey, true);
+  }, 0);
+  scopeChooser = {
+    el,
+    dispose: () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("mousedown", onOutside, true);
+      document.removeEventListener("keydown", onKey, true);
+    }
+  };
+}
+
+function closeScopeChooser(): void {
+  if (!scopeChooser) {
+    return;
+  }
+  const { el, dispose } = scopeChooser;
+  scopeChooser = null;
+  dispose();
+  el.remove();
+  const hook = scopeCancelHook;
+  scopeCancelHook = null;
+  hook?.();
+}
+
+async function toggleTodoDone(instance: string): Promise<void> {
+  const { eventId, date } = parseInstanceId(instance);
+  const stored = store.get(eventId);
   if (!stored || !stored.isTodo) {
     return;
   }
-  await store.update(id, { done: !Boolean(stored.done) });
-  syncCalendarEvent(id);
+  await store.toggleDone(eventId, date);
+  syncAfterChange(stored);
 }
 
 /* ---------- 交互回调 ---------- */
@@ -850,7 +1059,8 @@ function onSelect(info: DateSelectArg): void {
     endTime: allDay ? "10:00" : fmtTime(info.end),
     color: lastColor(),
     note: "",
-    isTodo: false
+    isTodo: false,
+    repeat: noRepeat(fmtDate(info.start))
   };
   calendar.unselect();
   const draft = calendar.addEvent({
@@ -886,7 +1096,8 @@ function onSelect(info: DateSelectArg): void {
         note: v.note,
         docId: "",
         isTodo: v.isTodo,
-        done: false
+        done: false,
+        repeat: ruleFromValues(v)
       });
     } else {
       await store.update(draftSavedId, {
@@ -897,12 +1108,13 @@ function onSelect(info: DateSelectArg): void {
         color: v.color,
         note: v.note,
         isTodo: v.isTodo,
-        done: v.isTodo ? Boolean(store.get(draftSavedId)?.done) : false
+        done: v.isTodo ? Boolean(store.get(draftSavedId)?.done) : false,
+        repeat: ruleFromValues(v)
       });
     }
     if (close) {
       draft?.remove();
-      syncCalendarEvent(draftSavedId);
+      syncAfterChange(store.get(draftSavedId), draftSavedId);
     }
   };
   const queueDraftSave = (v: PopoverValues) => {
@@ -998,20 +1210,109 @@ function onDateClick(info: DateClickArg): void {
   createAtPoint(info.date, currentViewKey() === "month" ? true : info.allDay);
 }
 
+/** 编辑弹窗打开期间，把改动实时映射到视图上（纵向作用于 FullCalendar 事件，横向作用于渲染覆盖层） */
+interface PreviewHandle {
+  setTitle(title: string): void;
+  setColor(color: string): void;
+  setValues(values: PopoverValues): void;
+  restore(original: CalEvent): void;
+}
+
+function fcPreview(event: EventApi): PreviewHandle {
+  return {
+    setTitle: (title) => event.setProp("title", title),
+    setColor: (color) => applyEventColor(event, color),
+    setValues: (values) => applyValuesToEvent(event, values),
+    restore: (original) => {
+      event.setProp("title", original.title);
+      applyEventColor(event, original.color);
+    }
+  };
+}
+
 function onEventClick(info: EventClickArg): void {
   info.jsEvent.preventDefault();
   if ((info.jsEvent.target as HTMLElement | null)?.closest(".cb-event-check")) {
     return;
   }
+  openEventEditor(info.event.id, {
+    x: info.jsEvent.clientX,
+    y: info.jsEvent.clientY,
+    rect: info.el.getBoundingClientRect()
+  }, fcPreview(info.event));
+}
+
+/**
+ * 打开编辑弹窗。
+ * 普通日程沿用"边改边存、点外部保留"的老习惯；
+ * 重复日程必须显式点保存并选择改动范围（仅此 / 此后所有 / 全部），点外部或 Esc 视为放弃。
+ */
+function openEventEditor(instance: string, anchor: { x: number; y: number; rect?: DOMRect }, preview: PreviewHandle): void {
   hideEventNoteTooltip();
-  const stored = store.get(info.event.id);
+  const { eventId, date } = parseInstanceId(instance);
+  const stored = store.get(eventId);
   if (!stored) {
     return;
   }
+  const repeating = hasRepeat(stored);
+  const [occurrence] = repeating
+    ? occurrencesInRange(stored, date, addDaysStr(date, 1))
+    : [];
+  const shownStart = occurrence ? occurrence.start : stored.start;
+  const shownEnd = occurrence ? occurrence.end : stored.end;
   const original = { ...stored };
   let editInteracted = false;
-  let latestEditValues = eventToValues(stored);
+  let latestEditValues = eventToValues({ ...stored, start: shownStart, end: shownEnd });
+  const initialChoice = choiceFromRule(stored);
+  latestEditValues.repeat = { ...initialChoice };
   let editSaveTimer = 0;
+
+  /** 把弹窗取值折算成对存储的改动；重复日程按实例的位移整体平移 */
+  const patchFromValues = (v: PopoverValues, scope: RepeatScope): Partial<CalEvent> => {
+    const range = valuesToRange(v);
+    const patch: Partial<CalEvent> = {
+      title: v.title,
+      color: v.color,
+      note: v.note,
+      isTodo: v.isTodo,
+      allDay: range.allDay
+    };
+    if (!repeating || scope !== "all") {
+      patch.start = range.start;
+      patch.end = range.end;
+      patch.repeat = scope === "this" ? undefined : ruleFromValues(v);
+      // "此后所有"另开一条系列：用户没改结束条件时，把剩余次数带过去，
+      // 否则新系列会平白多出几次
+      if (scope === "following" && patch.repeat?.count) {
+        const untouched = v.repeat.end === initialChoice.end
+          && v.repeat.count === initialChoice.count
+          && v.repeat.until === initialChoice.until;
+        if (untouched) {
+          const remaining = occurrenceDates(stored).filter((d) => d >= date).length;
+          patch.repeat = { ...patch.repeat, count: Math.max(remaining, 2) };
+        }
+      }
+      return patch;
+    }
+    // 整串修改：把这一次挪动的天数平移回主事件，保持系列锚点
+    Object.assign(patch, seriesShiftPatch(stored, date, range.start, range.end));
+    patch.repeat = ruleFromValues(v);
+    return patch;
+  };
+
+  const applyEdit = async (v: PopoverValues, scope: RepeatScope) => {
+    rememberColor(v.color);
+    const patch = patchFromValues(v, scope);
+    if (!repeating) {
+      await store.update(stored.id, { ...patch, done: v.isTodo ? Boolean(stored.done) : false });
+    } else {
+      await store.updateOccurrence(stored.id, date, scope, patch, newEventId);
+    }
+    preview.restore(original);
+    refresh();
+  };
+
+  /** 普通日程的即时保存（重复日程不走这条路） */
   const persistEdit = async (v: PopoverValues) => {
     editInteracted = true;
     latestEditValues = v;
@@ -1025,70 +1326,99 @@ function onEventClick(info: EventClickArg): void {
       color: v.color,
       note: v.note,
       isTodo: v.isTodo,
-      done: v.isTodo ? Boolean(stored.done) : false
+      done: v.isTodo ? Boolean(stored.done) : false,
+      repeat: ruleFromValues(v)
     });
   };
+
   const queueEditSave = (v: PopoverValues) => {
     editInteracted = true;
     latestEditValues = v;
-    applyValuesToEvent(info.event, v);
+    preview.setValues(v);
+    if (repeating) {
+      // 重复日程要等用户选范围，改动先只做预览
+      return;
+    }
     window.clearTimeout(editSaveTimer);
     editSaveTimer = window.setTimeout(() => {
       persistEdit(latestEditValues).catch(showError);
     }, 500);
   };
+
   openPopover({
     mode: "edit",
-    anchor: {
-      x: info.jsEvent.clientX,
-      y: info.jsEvent.clientY,
-      rect: info.el.getBoundingClientRect()
-    },
+    anchor,
     values: latestEditValues,
+    repeatHint: repeating ? describeRepeat(stored) : "",
     onTitleChange: (title) => {
-      info.event.setProp("title", title);
+      preview.setTitle(title);
     },
     onColorChange: (color) => {
-      applyEventColor(info.event, color);
+      preview.setColor(color);
     },
     onValuesChange: queueEditSave,
     onSave: async (v) => {
       window.clearTimeout(editSaveTimer);
-      await persistEdit(v).catch(showError);
-      syncCalendarEvent(stored.id);
+      if (!repeating) {
+        await persistEdit(v).catch(showError);
+        preview.restore(original);
+        syncAfterChange(store.get(stored.id), instance);
+        return;
+      }
+      // 规则本身变了就没必要问范围：新规则天然作用于整串
+      chooseRepeatScope(anchor, "edit", (scope) => {
+        applyEdit(v, scope).catch(showError);
+      });
     },
-    onDelete: async () => {
+    onDelete: () => {
       window.clearTimeout(editSaveTimer);
-      await store.remove(stored.id);
-      syncCalendarEvent(stored.id);
+      if (!repeating) {
+        preview.restore(original);
+        store.remove(stored.id).then(() => syncCalendarEvent(instance)).catch(showError);
+        return;
+      }
+      chooseRepeatScope(anchor, "delete", (scope) => {
+        preview.restore(original);
+        store.removeOccurrence(stored.id, date, scope).then(refresh).catch(showError);
+      });
     },
     onClose: () => {
       window.clearTimeout(editSaveTimer);
+      if (repeating) {
+        // 重复日程未点保存即视为放弃
+        preview.restore(original);
+        return;
+      }
       if (editInteracted) {
-        persistEdit(latestEditValues).catch(showError);
+        persistEdit(latestEditValues)
+          .then(() => {
+            preview.restore(original);
+            syncAfterChange(store.get(stored.id), instance);
+          })
+          .catch(showError);
       } else {
-        info.event.setProp("title", original.title);
-        applyEventColor(info.event, original.color);
+        preview.restore(original);
       }
     },
     onCancel: () => {
       window.clearTimeout(editSaveTimer);
-      if (editInteracted) {
-        // 回滚到打开弹窗前的原始内容
-        store.update(stored.id, {
-          title: original.title,
-          start: original.start,
-          end: original.end,
-          allDay: original.allDay,
-          color: original.color,
-          note: original.note,
-          isTodo: Boolean(original.isTodo),
-          done: Boolean(original.done)
-        }).then(() => syncCalendarEvent(stored.id)).catch(showError);
-      } else {
-        info.event.setProp("title", original.title);
-        applyEventColor(info.event, original.color);
+      preview.restore(original);
+      if (repeating || !editInteracted) {
+        refresh();
+        return;
       }
+      // 回滚到打开弹窗前的原始内容
+      store.update(stored.id, {
+        title: original.title,
+        start: original.start,
+        end: original.end,
+        allDay: original.allDay,
+        color: original.color,
+        note: original.note,
+        isTodo: Boolean(original.isTodo),
+        done: Boolean(original.done),
+        repeat: original.repeat
+      }).then(() => syncAfterChange(store.get(stored.id), instance)).catch(showError);
     }
   });
 }
@@ -1097,17 +1427,39 @@ async function onEventMutate(info: EventDropArg | EventResizeDoneArg): Promise<v
   closePopover(true);
   hideEventNoteTooltip();
   const event = info.event;
-  const stored = store.get(event.id);
+  const { eventId, date } = parseInstanceId(event.id);
+  const stored = store.get(eventId);
   if (!stored) {
     return;
   }
   const range = serializeRange({ start: event.start, end: event.end, allDay: event.allDay });
-  try {
-    await store.update(event.id, { start: range.start, end: range.end, allDay: event.allDay });
-  } catch (err) {
-    info.revert();
-    showError(err);
+  if (!hasRepeat(stored)) {
+    try {
+      await store.update(eventId, { start: range.start, end: range.end, allDay: event.allDay });
+    } catch (err) {
+      info.revert();
+      showError(err);
+    }
+    return;
   }
+  // 拖动的是重复日程的某一次，先问改动范围
+  const jsEvent = info.jsEvent as MouseEvent | undefined;
+  const rect = info.el.getBoundingClientRect();
+  const anchor = { x: jsEvent?.clientX ?? rect.left, y: jsEvent?.clientY ?? rect.bottom };
+  chooseRepeatScope(anchor, "edit", (scope) => {
+    const patch: Partial<CalEvent> = scope === "all"
+      ? { ...seriesShiftPatch(stored, date, range.start, range.end), allDay: event.allDay }
+      : { start: range.start, end: range.end, allDay: event.allDay };
+    if (scope === "this") {
+      patch.repeat = undefined;
+    }
+    store.updateOccurrence(stored.id, date, scope, patch, newEventId)
+      .then(refresh)
+      .catch((err) => {
+        info.revert();
+        showError(err);
+      });
+  }, () => info.revert());
 }
 
 function showError(err: unknown): void {
@@ -1123,6 +1475,23 @@ function showError(err: unknown): void {
 
 function currentViewKey(): ViewKey {
   return VIEW_KEY[calendar.view.type] || "week";
+}
+
+/** 当前视图起始日 */
+function currentStartDate(): string {
+  return calendar ? fmtDate(calendar.view.currentStart) : anchorDate;
+}
+
+function viewGotoDate(date: string): void {
+  calendar?.gotoDate(date);
+}
+
+function viewStep(days: number): void {
+  if (days < 0) {
+    calendar.prev();
+  } else {
+    calendar.next();
+  }
 }
 
 function anchorLabel(view: ViewKey): string {
@@ -1145,11 +1514,12 @@ function anchorLabel(view: ViewKey): string {
   return anchorDate;
 }
 
-function visiblePanelLabel(view: ViewKey): string {
+/** 按钮上显示的是"当前正在看的那一天/周/月"，而不是绑定值；是否等于绑定值由高亮样式表达 */
+function visibleLabel(view: ViewKey): string {
   if (!calendar) {
     return anchorLabel(view);
   }
-  const currentStart = fmtDate(calendar.view.currentStart);
+  const currentStart = currentStartDate();
   if (view === "week") {
     const iso = getIsoWeek(parseDate(currentStart));
     const m = iso.match(/^(\d{4})-W(\d{2})$/);
@@ -1166,7 +1536,7 @@ function isShowingAnchor(view: ViewKey): boolean {
   if (!anchorDate || !calendar) {
     return false;
   }
-  const currentStart = fmtDate(calendar.view.currentStart);
+  const currentStart = currentStartDate();
   if (view === "week") {
     return getIsoWeek(parseDate(currentStart)) === getIsoWeek(parseDate(anchorDate));
   }
@@ -1247,7 +1617,7 @@ function parseWeekLabel(input: string): string | null {
 async function saveBlockSettings(nextDate: string, nextDuration: number): Promise<void> {
   anchorDate = nextDate;
   defaultDurationMinutes = parseDurationMinutes(String(nextDuration));
-  calendar.setOption("defaultTimedEventDuration", durationToFullCalendar(defaultDurationMinutes));
+  calendar?.setOption("defaultTimedEventDuration", durationToFullCalendar(defaultDurationMinutes));
   if (blockId) {
     await setBlockAttrs(blockId, {
       [DATE_ATTR]: anchorDate,
@@ -1255,7 +1625,7 @@ async function saveBlockSettings(nextDate: string, nextDuration: number): Promis
       [DURATION_ATTR]: String(defaultDurationMinutes)
     });
   }
-  calendar.gotoDate(anchorDate);
+  viewGotoDate(anchorDate);
   syncToolbar(document.getElementById("app")!);
 }
 
@@ -1860,7 +2230,50 @@ function defaultCreateValues(): PopoverValues {
     endTime: fmtTime(addMinutes(base, defaultDurationMinutes)),
     color: lastColor(),
     note: "",
-    isTodo: false
+    isTodo: false,
+    repeat: noRepeat(fmtDate(base))
+  };
+}
+
+/** 新建弹窗里的实时预览草稿块 */
+interface DraftHandle {
+  setTitle(title: string): void;
+  setColor(color: string): void;
+  setValues(values: PopoverValues): void;
+  remove(): void;
+}
+
+function createDraft(values: PopoverValues): DraftHandle | null {
+  const range = valuesToRange(values);
+  const draftId = `draft-${Date.now().toString(36)}`;
+  if (!calendar) {
+    return null;
+  }
+  const event = calendar.addEvent({
+    id: draftId,
+    title: values.title || "（无标题）",
+    start: range.start,
+    end: range.end,
+    allDay: range.allDay,
+    backgroundColor: values.color,
+    borderColor: "transparent",
+    textColor: textColorFor(values.color),
+    editable: false,
+    classNames: ["cb-event-draft"]
+  });
+  return {
+    setTitle: (title) => event?.setProp("title", title),
+    setColor: (color) => {
+      if (event) {
+        applyEventColor(event, color);
+      }
+    },
+    setValues: (v) => {
+      if (event) {
+        applyValuesToEvent(event, v);
+      }
+    },
+    remove: () => event?.remove()
   };
 }
 
@@ -1868,34 +2281,21 @@ function openCreatePopover(opts: {
   anchor: { x: number; y: number; rect?: DOMRect };
   ignoreOutside?: HTMLElement[];
   docId: string;
+  /** 指定初始时间等取值；留空则用"当前时间＋默认时长" */
+  values?: PopoverValues;
   /** 在日历上显示实时预览草稿块（标题/颜色/时间随弹窗即时变化）；快捷添加等无日历场景应留空 */
   liveDraft?: boolean;
   onDone?(result: { values: PopoverValues; range: { start: string; end: string; allDay: boolean }; id: string }): void;
   onCancelSaved?(id: string): void;
   onCancel?(): void;
 }): void {
-  const values = defaultCreateValues();
+  const values = opts.values || defaultCreateValues();
   let savedId = "";
   let interacted = false;
   let latestValues = values;
   let saveTimer = 0;
   // 实时预览草稿块：弹窗里改标题/颜色/时间时，日历上即时跟随，保存后再换成正式事件
-  let draft: EventApi | null = null;
-  if (opts.liveDraft) {
-    const range0 = valuesToRange(values);
-    draft = calendar.addEvent({
-      id: `draft-${Date.now().toString(36)}`,
-      title: values.title || "（无标题）",
-      start: range0.start,
-      end: range0.end,
-      allDay: range0.allDay,
-      backgroundColor: values.color,
-      borderColor: "transparent",
-      textColor: textColorFor(values.color),
-      editable: false,
-      classNames: ["cb-event-draft"]
-    });
-  }
+  let draft: DraftHandle | null = opts.liveDraft ? createDraft(values) : null;
   const removeDraft = () => {
     draft?.remove();
     draft = null;
@@ -1917,7 +2317,8 @@ function openCreatePopover(opts: {
         note: v.note,
         docId: "",
         isTodo: v.isTodo,
-        done: false
+        done: false,
+        repeat: ruleFromValues(v)
       });
     } else {
       await store.update(savedId, {
@@ -1928,11 +2329,13 @@ function openCreatePopover(opts: {
         color: v.color,
         note: v.note,
         isTodo: v.isTodo,
-        done: v.isTodo ? Boolean(store.get(savedId)?.done) : false
+        done: v.isTodo ? Boolean(store.get(savedId)?.done) : false,
+        repeat: ruleFromValues(v)
       });
     }
     if (close) {
       opts.onDone?.({ values: v, range, id: savedId });
+      syncAfterChange(store.get(savedId), savedId);
     }
   };
 
@@ -1942,19 +2345,15 @@ function openCreatePopover(opts: {
     ignoreOutside: opts.ignoreOutside,
     values,
     onTitleChange: (title) => {
-      draft?.setProp("title", title);
+      draft?.setTitle(title);
     },
     onColorChange: (color) => {
-      if (draft) {
-        applyEventColor(draft, color);
-      }
+      draft?.setColor(color);
     },
     onValuesChange: (v) => {
       interacted = true;
       latestValues = v;
-      if (draft) {
-        applyValuesToEvent(draft, v);
-      }
+      draft?.setValues(v);
       window.clearTimeout(saveTimer);
       saveTimer = window.setTimeout(() => {
         persistNew(latestValues).catch(showError);
@@ -2103,11 +2502,12 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
     if (panelMode) {
       gotoPanelCurrentAnchor();
     } else if (anchorDate) {
-      calendar.gotoDate(anchorDate);
+      viewGotoDate(anchorDate);
+      syncToolbar(root);
     }
   });
-  root.querySelector(".cb-nav-prev")!.addEventListener("click", () => calendar.prev());
-  root.querySelector(".cb-nav-next")!.addEventListener("click", () => calendar.next());
+  root.querySelector(".cb-nav-prev")!.addEventListener("click", () => viewStep(-1));
+  root.querySelector(".cb-nav-next")!.addEventListener("click", () => viewStep(1));
   root.querySelector(".cb-btn-new")!.addEventListener("click", (event) => {
     if (toolbarCreatePopoverOpen) {
       closePopover();
@@ -2122,7 +2522,7 @@ function buildToolbar(root: HTMLElement, view: ViewKey): void {
       docId: docId,
       liveDraft: true,
       onDone: ({ range, id }) => {
-        calendar.gotoDate(range.start);
+        viewGotoDate(range.start.slice(0, 10));
         syncCalendarEvent(id);
       },
       onCancelSaved: (id) => {
@@ -2139,7 +2539,7 @@ function syncToolbar(root: HTMLElement): void {
   const key = currentViewKey();
   const anchorBtn = root.querySelector(".cb-btn-anchor") as HTMLElement;
   if (anchorBtn) {
-    anchorBtn.textContent = panelMode ? visiblePanelLabel(key) : (anchorLabel(key) || (key === "week" ? "锚定周" : "锚定日期"));
+    anchorBtn.textContent = visibleLabel(key) || (key === "week" ? "锚定周" : "锚定日期");
     anchorBtn.classList.toggle("cb-btn-anchor--active", panelMode ? isShowingPanelCurrentAnchor(panelCurrentAnchor) : isShowingAnchor(key));
   }
 }
@@ -2176,6 +2576,81 @@ function isEditableTarget(target: EventTarget | null): boolean {
   }
   const tag = el.tagName.toLowerCase();
   return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
+}
+
+/** 输入框里应由浏览器自己处理的编辑组合键；转发给思源会误触发文档撤销、全选等 */
+function isNativeEditingCombo(event: KeyboardEvent): boolean {
+  if (event.altKey || !(event.metaKey || event.ctrlKey)) {
+    return false;
+  }
+  return ["a", "c", "v", "x", "z", "y"].includes(event.key.toLowerCase());
+}
+
+/**
+ * 挂件跑在 iframe 里，键盘事件不会越过 iframe 边界冒泡到思源宿主，
+ * 于是焦点停在日程块或日程面板内时，⌘, 打开设置这类思源全局快捷键会失效。
+ * 这里把带修饰键的组合原样补发到宿主里的 iframe 元素上，由它照常冒泡到思源的全局监听；
+ * 宿主已消费（preventDefault）时，同步阻止挂件内的默认行为，避免一次按键被两边各做一遍。
+ */
+function forwardHotkeyToHost(event: KeyboardEvent): void {
+  let host: Window | null = null;
+  let target: EventTarget | null = null;
+  try {
+    host = window.parent;
+    if (!host || host === window || !host.document) {
+      return;
+    }
+    target = (window.frameElement as HTMLElement | null) || host.document;
+  } catch {
+    // 宿主跨域时无法转发（思源里不会出现），静默放弃
+    return;
+  }
+  if (!target) {
+    return;
+  }
+  const Ctor = (host as Window & { KeyboardEvent?: typeof KeyboardEvent }).KeyboardEvent || KeyboardEvent;
+  const clone = new Ctor("keydown", {
+    key: event.key,
+    code: event.code,
+    location: event.location,
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+    repeat: event.repeat,
+    isComposing: false,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: host,
+    // 思源部分判定仍读 keyCode/which，补上旧字段（Chromium 支持在 init 里传）
+    keyCode: event.keyCode,
+    which: event.keyCode
+  } as KeyboardEventInit);
+  try {
+    (target as HTMLElement | Document).dispatchEvent(clone);
+  } catch {
+    return;
+  }
+  if (clone.defaultPrevented) {
+    event.preventDefault();
+  }
+}
+
+function installHostHotkeyBridge(): void {
+  window.addEventListener("keydown", (event) => {
+    // 挂件自己已经处理掉的按键（撤销、切换日期等）不再外送
+    if (event.defaultPrevented || event.isComposing) {
+      return;
+    }
+    if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+      return;
+    }
+    if (isEditableTarget(event.target) && isNativeEditingCombo(event)) {
+      return;
+    }
+    forwardHotkeyToHost(event);
+  });
 }
 
 function focusWidgetFrame(target: EventTarget | null): void {
@@ -2258,14 +2733,6 @@ async function boot(): Promise<void> {
   const blockEl = (frame?.closest("[data-node-id]") as HTMLElement | null) || null;
   blockId = panelMode ? "" : blockEl?.getAttribute("data-node-id") || "";
 
-  // 新插入的挂件块给一个合适的默认高度（思源把高度存于块的 style 属性）
-  if (!panelMode && blockEl && !blockEl.style.height) {
-    blockEl.style.height = DEFAULT_HEIGHT;
-    if (blockId) {
-      setBlockAttrs(blockId, { style: `height: ${DEFAULT_HEIGHT};` }).catch(() => {});
-    }
-  }
-
   // 获取所属文档的 root_id
   if (blockId) {
     docId = await getRootId(blockId);
@@ -2307,6 +2774,14 @@ async function boot(): Promise<void> {
     date = panelCurrentAnchor;
   }
 
+  // 新插入的挂件块给一个合适的默认高度（思源把高度存于块的 style 属性）
+  if (!panelMode && blockEl && !blockEl.style.height) {
+    blockEl.style.height = DEFAULT_HEIGHT;
+    if (blockId) {
+      setBlockAttrs(blockId, { style: `height: ${DEFAULT_HEIGHT};` }).catch(() => {});
+    }
+  }
+
   // 锚定日期：面板使用当前时间；嵌入块优先用标题解析，否则用属性或今日。
   anchorDate = date || fmtDate(new Date());
 
@@ -2335,7 +2810,8 @@ async function boot(): Promise<void> {
     console.warn("schedule-block: 天气数据加载失败", err);
   }
 
-  calendar = new Calendar(root.querySelector(".cb-calendar") as HTMLElement, {
+  const calendarHost = root.querySelector(".cb-calendar") as HTMLElement;
+  calendar = new Calendar(calendarHost, {
     plugins: [timeGridPlugin, dayGridPlugin, interactionPlugin],
     locale: zhCnLocale,
     firstDay: 1,
@@ -2408,7 +2884,7 @@ async function boot(): Promise<void> {
         html: `<div class="cb-dh cb-dh--week${todayClass}"><div class="cb-dh-top"><span class="cb-dh-date">${dateLabel}</span><span class="cb-dh-lunar">${lunarLabel}</span></div><div class="cb-dh-status"><span class="cb-dh-main">${dow}</span>${weather}</div></div>`
       };
     },
-    events: (_info, success) => success(visibleFilteredEvents().map(toFC)),
+    events: (info, success) => success(occurrencesForRange(fmtDate(info.start), fmtDate(info.end)).map(toFC)),
     eventClassNames,
     eventContent: renderEventContent,
     eventDidMount: onEventDidMount,
@@ -2463,21 +2939,19 @@ async function boot(): Promise<void> {
       if (panelMode) {
         gotoPanelCurrentAnchor();
       } else if (anchorDate) {
-        calendar.gotoDate(anchorDate);
+        viewGotoDate(anchorDate);
         syncToolbar(root);
       }
       return;
     }
     if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
-      if (event.key === "ArrowLeft") {
-        calendar.prev();
-      } else {
-        calendar.next();
-      }
+      viewStep(event.key === "ArrowLeft" ? -1 : 1);
     }
   };
   window.addEventListener("keydown", onKeydown);
+  // 注册在挂件自身快捷键之后：本挂件已消费的按键不会再外送给思源
+  installHostHotkeyBridge();
 
   let isDirty = false;
   store.onRemoteChange = () => {
@@ -2604,6 +3078,8 @@ async function boot(): Promise<void> {
   window.addEventListener("beforeunload", () => {
     window.clearInterval(panelCurrentTimer);
     popoverObserver.disconnect();
+    // 弹窗可能挂在思源宿主文档里，挂件卸载前先收走，免得留下孤儿节点
+    closePopover(true);
   });
 }
 
@@ -2623,13 +3099,13 @@ async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
   const previousTitle = button.title;
   button.title = "正在截图...";
   document.body.classList.add("cb-screenshot-capturing");
-  calendar.setOption("height", "auto");
-  calendar.updateSize();
+  calendar?.setOption("height", "auto");
+  calendar?.updateSize();
   refreshWeatherHeaders();
   adjustAllEventDurations();
   scheduleSyncCalendarScrollbars();
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  calendar.updateSize();
+  calendar?.updateSize();
   await new Promise((resolve) => requestAnimationFrame(resolve));
 
   try {
@@ -2642,8 +3118,8 @@ async function captureCurrentView(button: HTMLButtonElement): Promise<void> {
     await saveScreenshotBlob(blob, screenshotFileName());
   } finally {
     document.body.classList.remove("cb-screenshot-capturing");
-    calendar.setOption("height", "100%");
-    calendar.updateSize();
+    calendar?.setOption("height", "100%");
+    calendar?.updateSize();
     button.disabled = false;
     button.title = previousTitle;
   }
@@ -2738,6 +3214,7 @@ function isAbortError(err: unknown): boolean {
 
 async function bootQuickAdd(): Promise<void> {
   initThemeBridge();
+  installHostHotkeyBridge();
   try {
     await loadPalette();
   } catch (err) {
